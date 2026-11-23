@@ -1,6 +1,7 @@
 name: Build Windows (Arabize Game)
 on:
   push:
+    paths-ignore: ["site/**", ".github/workflows/pages.yml", "tests/site_test.py", "*.md"]
   workflow_dispatch:
 jobs:
   windows:
