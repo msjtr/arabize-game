@@ -536,3 +536,46 @@ rep('/* ============ subtitles: enter + exit effects ============ */', LIVE_JS +
 
 open(P, "w", encoding="utf-8").write(s)
 print("live patched", len(s))
+
+# ====================================================================== phones: what a web page can and cannot read
+s = open(P, encoding="utf-8").read()
+PHONE_HTML = '''      <div class="lvphone" id="lvPhone" hidden>
+        <h3><span class="i3d" data-i="pad" data-h="gold"></span><span id="lvPhoneT">ألعاب على الآيفون نفسه: ترجمة بنقرتين على ظهر الجوال</span></h3>
+        <p id="lvPhoneP">آبل لا تسمح لأي موقع بقراءة شاشة التطبيقات الأخرى، ولا يوجد متصفح على الآيفون يستطيع ذلك. لكن الآيفون فيه أدوات مدمجة تؤدي المهمة بدون تثبيت أي شيء: اختصار يصوّر الشاشة، ويقرأ النص، ويترجمه، ويعرض الترجمة إشعاراً فوق اللعبة. جهّزه مرة واحدة (دقيقتان):</p>
+        <ol id="lvIosSteps">
+          <li>افتح تطبيق <b>الاختصارات</b> (Shortcuts) واضغط <b>+</b> لاختصار جديد، وسمّه «عرّب لعبتك».</li>
+          <li>أضف الإجراء <b>التقاط لقطة شاشة</b> (Take Screenshot).</li>
+          <li>أضف <b>استخراج النص من الصورة</b> (Extract Text from Image).</li>
+          <li>أضف <b>ترجمة النص</b> (Translate Text) واجعل لغة الترجمة <b>العربية</b>.</li>
+          <li>أضف <b>إظهار الإشعار</b> (Show Notification) ليعرض الترجمة فوق اللعبة. للحوارات الطويلة استخدم <b>إظهار النتيجة</b> (Show Result) بدلاً منه.</li>
+          <li>افتح <b>الإعدادات ← تسهيلات الاستخدام ← اللمس ← النقر على الظهر ← نقر مزدوج</b> واختر «عرّب لعبتك». في iPhone 15 Pro وأحدث يمكنك وضعه على <b>زر الإجراء</b> أيضاً.</li>
+        </ol>
+        <p class="lvok" id="lvIosUse">أثناء اللعب انقر مرتين على ظهر الجوال: تظهر الترجمة خلال ثانية تقريباً وأنت داخل اللعبة. حمّل اللغة العربية في تطبيق <b>ترجمة</b> لتعمل حتى بدون إنترنت.</p>
+        <p class="lvok" id="lvAndroid" hidden>على أندرويد: في الجوالات التي تدعم «البحث بدائرة» (Circle to Search) اضغط مطولاً على زر الرئيسية أو شريط التنقل أثناء اللعب، ثم اختر <b>ترجمة</b> فتظهر الترجمة فوق الشاشة.</p>
+        <p class="lvok">ولشاشة التلفزيون أو الكمبيوتر أو جهاز الألعاب: اضغط <b>كاميرا الجوال</b> في الأعلى ووجّهها إلى الشاشة، فيقرأ الموقع النص ويترجمه مباشرة.</p>
+      </div>
+'''
+rep('      <ul class="lvlast" id="lvLast"></ul>', PHONE_HTML + '      <ul class="lvlast" id="lvLast"></ul>')
+PHONE_CSS = r'''
+.lvphone{margin-top:14px;padding:14px 16px;border-radius:16px;border:1px solid color-mix(in srgb,var(--acc) 40%,transparent);background:linear-gradient(160deg,color-mix(in srgb,var(--acc) 9%,transparent),rgba(255,255,255,.02))}
+.lvphone h3{display:flex;align-items:center;gap:10px;margin:0 0 6px;font-size:16px;line-height:1.5}
+.lvphone h3 .i3d{--s:34px}
+.lvphone p{margin:6px 0;color:var(--mist);font-size:13.5px;line-height:1.85}
+.lvphone ol{margin:8px 0;padding-inline-start:22px;display:grid;gap:6px;font-size:14px;line-height:1.75}
+.lvphone ol li::marker{color:var(--acc);font-weight:700}
+.lvphone .lvok{color:var(--muted);font-size:13px}
+'''
+rep('/* ============ settings / forms ============ */', PHONE_CSS + '\n/* ============ settings / forms ============ */')
+rep('$("lvPip").onclick=pipOpen;', r'''$("lvPip").onclick=pipOpen;
+/* phones: a web page cannot read other apps' screens (iPhone/iPad never, Android browsers neither) */
+(()=>{const ua=navigator.userAgent,ios=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1),
+  android=/Android/i.test(ua),canShare=!!(navigator.mediaDevices&&navigator.mediaDevices.getDisplayMedia)&&!ios&&!android;
+  if(!canShare){$("lvScreen").hidden=true;$("lvCam").classList.remove("ghost");$("lvCam").lastChild.textContent="ابدأ بكاميرا الجوال";
+    $("lvEmpty").querySelector("p").textContent="وجّه كاميرا الجوال إلى شاشة التلفزيون أو الكمبيوتر أو جهاز الألعاب، فيقرأ الموقع النص كلما تغيّر ويترجمه مباشرة. لألعاب الجوال نفسه انظر الطريقة في الأسفل."}
+  if(ios||android){$("lvPhone").hidden=false;
+    if(android){$("lvPhoneT").textContent="ألعاب على الجوال نفسه";$("lvPhoneP").textContent="متصفحات الجوال لا تسمح لأي موقع بقراءة شاشة التطبيقات الأخرى. استخدم أداة الجوال المدمجة:";
+      $("lvIosSteps").hidden=true;$("lvIosUse").hidden=true;$("lvAndroid").hidden=false}}
+  if(ios||android)document.querySelector('.mode[data-m=live] small').textContent="كاميرا الجوال للتلفزيون، وطريقة لألعاب الجوال نفسه";
+})();''')
+open(P, "w", encoding="utf-8").write(s)
+print("phone patched", len(s))
