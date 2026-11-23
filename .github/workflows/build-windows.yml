@@ -1,0 +1,31 @@
+name: Build Windows (Arabize Game)
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Tests on real Windows (core, engines, OCR, Windows-only features)
+        run: python -m pytest -q tests/test_core.py tests/test_ocr.py tests/test_windows.py
+      - name: Build exe
+        run: pyinstaller --noconfirm ArabizeGame.spec
+      - name: Smoke test the built app
+        shell: pwsh
+        run: |
+          $p = Start-Process dist/ArabizeGame/ArabizeGame.exe -ArgumentList "--minimized" -PassThru
+          Start-Sleep -Seconds 15
+          if ($p.HasExited) { Write-Error "App exited early with code $($p.ExitCode)"; exit 1 }
+          Stop-Process -Id $p.Id -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArabizeGame-windows
+          path: dist/ArabizeGame

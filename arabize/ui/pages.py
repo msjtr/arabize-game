@@ -1,0 +1,729 @@
+"""All pages of the main window. Each page edits the ACTIVE game profile through the controller."""
+from __future__ import annotations
+
+import csv
+import datetime as dt
+import os
+import sys
+
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QFont, QGuiApplication, QKeySequence
+from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+                               QFileDialog, QFontComboBox, QFormLayout, QGridLayout, QHBoxLayout, QHeaderView,
+                               QInputDialog, QKeySequenceEdit, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                               QMessageBox, QPushButton, QScrollArea, QStackedWidget, QTableWidget, QTableWidgetItem,
+                               QVBoxLayout, QWidget)
+
+from ..config import APP_NAME_AR, APP_NAME_EN, APP_VERSION, DEFAULT_HOTKEYS, ENGINE_INFO, LANGUAGES, data_dir
+from ..screens import screen_label
+from . import icons, theme
+from .widgets import (ColorPick, MonitorMap, PowerButton, SubtitlePreview, ValueSlider, card, hint, row, title)
+
+
+class Page(QScrollArea):
+    """Scrollable page with a vertical layout and a list of 'advanced only' widgets."""
+    title_text = ""
+
+    def __init__(self, ctrl):
+        super().__init__()
+        self.ctrl = ctrl
+        self.setWidgetResizable(True)
+        self.body = QWidget()
+        self.v = QVBoxLayout(self.body)
+        self.v.setContentsMargins(26, 8, 26, 26)
+        self.v.setSpacing(16)
+        self.setWidget(self.body)
+        self.adv: list[QWidget] = []
+
+    def advanced(self, w: QWidget) -> QWidget:
+        self.adv.append(w)
+        return w
+
+    def set_advanced(self, on: bool):
+        for w in self.adv:
+            w.setVisible(on)
+
+    def refresh(self):
+        pass
+
+    @property
+    def prof(self) -> dict:
+        return self.ctrl.settings.profile
+
+    def save(self, path: str, value, apply: str = "display"):
+        self.ctrl.settings.update_profile(path, value)
+        if apply == "display":
+            self.ctrl.apply_display()
+        elif apply == "capture":
+            self.ctrl.capture_changed()
+        elif apply == "restart":
+            self.ctrl.restart_if_running()
+
+
+# ======================================================================= home
+class HomePage(Page):
+    title_text = "التشغيل"
+
+    def __init__(self, ctrl):
+        super().__init__(ctrl)
+        top = QHBoxLayout(); top.setSpacing(16)
+
+        hero, hl = card(gold=True)
+        hrow = QHBoxLayout(); hrow.setSpacing(22)
+        self.power = PowerButton(176)
+        self.power.clicked.connect(ctrl.toggle)
+        hrow.addWidget(self.power, 0, Qt.AlignVCenter)
+        info = QVBoxLayout(); info.setSpacing(6)
+        self.state_lbl = QLabel("جاهز للتشغيل"); self.state_lbl.setFont(theme.display_font(24))
+        self.state_sub = hint("افتح لعبتك ثم اضغط «ابدأ الترجمة» أو Ctrl+Shift+T من داخل اللعبة.")
+        self.game_chip = QLabel(); self.game_chip.setObjectName("Muted")
+        info.addStretch(1); info.addWidget(self.state_lbl); info.addWidget(self.state_sub); info.addWidget(self.game_chip); info.addStretch(1)
+        hrow.addLayout(info, 1)
+        hl.addLayout(hrow)
+        top.addWidget(hero, 3)
+
+        side, sl = card()
+        sl.addWidget(title("طريقة العرض", "vr"))
+        seg = QHBoxLayout(); seg.setSpacing(8)
+        self.btn_screen = QPushButton(icons.icon("monitor", theme.MIST, theme.GOLD2), "  وضع الشاشة")
+        self.btn_vr = QPushButton(icons.icon("vr", theme.MIST, theme.GOLD2), "  الواقع الافتراضي")
+        grp = QButtonGroup(self)
+        for b in (self.btn_screen, self.btn_vr):
+            b.setObjectName("Seg"); b.setCheckable(True); grp.addButton(b); seg.addWidget(b)
+        self.btn_screen.clicked.connect(lambda: ctrl.set_mode("screen"))
+        self.btn_vr.clicked.connect(lambda: ctrl.set_mode("vr"))
+        sl.addLayout(seg)
+        sl.addWidget(hint("لكل وضع إعداداته الخاصة في صفحة «المظهر». اختصار التبديل: Ctrl+Shift+V"))
+        sl.addWidget(title("أوامر سريعة", "zap"))
+        g = QGridLayout(); g.setSpacing(8)
+        actions = [("crop", "تحديد منطقة", ctrl.select_region), ("full", "الشاشة كاملة", ctrl.use_full_screen),
+                   ("eye_off", "إخفاء/إظهار الترجمة", ctrl.toggle_overlay), ("refresh", "ترجم الآن", ctrl.retranslate)]
+        for i, (ic, txt, fn) in enumerate(actions):
+            b = QPushButton(icons.icon(ic, theme.GOLD2), "  " + txt); b.clicked.connect(fn)
+            g.addWidget(b, i // 2, i % 2)
+        sl.addLayout(g)
+        top.addWidget(side, 2)
+        self.v.addLayout(top)
+
+        stats = QHBoxLayout(); stats.setSpacing(12)
+        self.stat = {}
+        for key, ic, label in (("engine", "lang", "محرك الترجمة"), ("speed", "zap", "زمن القراءة + الترجمة"),
+                               ("usage", "cpu", "استهلاك البرنامج"), ("count", "hist", "ترجمات هذه الجلسة")):
+            c, l = card()
+            l.addWidget(title(label, ic))
+            v = QLabel("—"); v.setObjectName("Stat"); l.addWidget(v)
+            self.stat[key] = v
+            stats.addWidget(c)
+        self.v.addLayout(stats)
+
+        last, ll = card()
+        hdr = QHBoxLayout(); hdr.addWidget(title("آخر ترجمة", "spark")); hdr.addStretch(1)
+        self.edit_btn = QPushButton(icons.icon("edit", theme.GOLD2), "  تعديل الترجمة"); self.edit_btn.setEnabled(False)
+        self.edit_btn.clicked.connect(self._edit_last)
+        hdr.addWidget(self.edit_btn)
+        ll.addLayout(hdr)
+        self.last_tr = QLabel("ستظهر هنا آخر ترجمة مع النص الأصلي."); self.last_tr.setWordWrap(True)
+        self.last_tr.setFont(theme.ui_font(15, True)); self.last_tr.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.last_src = QLabel(""); self.last_src.setObjectName("Muted"); self.last_src.setWordWrap(True)
+        self.last_src.setLayoutDirection(Qt.LeftToRight); self.last_src.setAlignment(Qt.AlignLeft)
+        ll.addWidget(self.last_tr); ll.addWidget(self.last_src)
+        self.v.addWidget(last)
+        self.v.addStretch(1)
+        self._last = None
+        self._count = 0
+        ctrl.status.connect(self.on_status)
+        ctrl.result.connect(self.on_result)
+        ctrl.metrics.connect(self.on_metrics)
+        ctrl.running_changed.connect(self.power.set_on)
+        ctrl.mode_changed.connect(self.refresh)
+        ctrl.profile_changed.connect(self.refresh)
+        self.refresh()
+
+    def refresh(self):
+        mode = self.prof["display"]["mode"]
+        self.btn_screen.setChecked(mode == "screen"); self.btn_vr.setChecked(mode == "vr")
+        p = self.prof
+        where = "الشاشة كاملة" if p["capture"]["full"] else "منطقة محددة"
+        self.game_chip.setText(f"إعدادات: {p['name']}   •   مصدر النص: الشاشة {p['capture']['monitor']} ({where})")
+
+    def on_status(self, code, msg):
+        names = {"running": "الترجمة تعمل", "reading": "يقرأ النص…", "translating": "يترجم…", "paused": "متوقف مؤقتاً",
+                 "offline": "بانتظار الإنترنت", "error": "تنبيه", "stopped": "جاهز للتشغيل"}
+        self.state_lbl.setText(names.get(code, msg))
+        self.state_lbl.setStyleSheet(f"color:{theme.ERR if code in ('error', 'offline') else theme.MIST};")
+        self.state_sub.setText(msg if code != "stopped" else "افتح لعبتك ثم اضغط «ابدأ الترجمة» أو Ctrl+Shift+T من داخل اللعبة.")
+
+    def on_result(self, r):
+        self._last = r
+        self._count += 1
+        self.last_tr.setText(r["text"])
+        self.last_src.setText(r["src_text"])
+        self.edit_btn.setEnabled(True)
+        src = {"engine": "", "manual": " (تعديلك)"}.get(r["source"], " (من الذاكرة)")
+        self.stat["engine"].setText(ENGINE_INFO.get(r["engine"], {}).get("name", r["engine"]).split(" (")[0] + src)
+        self.stat["speed"].setText(f"{r['ms']['ocr']} + {r['ms']['tr']} ms")
+        self.stat["count"].setText(str(self._count))
+
+    def on_metrics(self, m):
+        self.stat["usage"].setText(f"{m['cpu']:.0f}% • {m['mem']:.0f} MB")
+
+    def _edit_last(self):
+        if not self._last:
+            return
+        txt, ok = QInputDialog.getMultiLineText(self, "تعديل الترجمة",
+                                                "عدّل الترجمة — سيستخدم البرنامج تعديلك كلما ظهر هذا النص مرة أخرى:",
+                                                self._last["text"])
+        if ok and txt.strip():
+            self.ctrl.edit_translation(self._last["history_id"], txt.strip(), self._last)
+            self.last_tr.setText(txt.strip())
+
+
+# ======================================================================= screens
+class ScreensPage(Page):
+    title_text = "الشاشة والمنطقة"
+
+    def __init__(self, ctrl):
+        super().__init__(ctrl)
+        c, l = card()
+        l.addWidget(title("مصدر النص — الشاشة التي تعمل عليها اللعبة", "monitor"))
+        l.addWidget(hint("اضغط على الشاشة المطلوبة. تظهر هنا كل الشاشات والتلفزيونات المتصلة بالكمبيوتر بدقتها الحقيقية."))
+        self.map = MonitorMap(); self.map.picked.connect(self._pick_monitor)
+        l.addWidget(self.map)
+        seg = QHBoxLayout()
+        self.b_full = QPushButton(icons.icon("full", theme.MIST, theme.GOLD2), "  الشاشة كاملة")
+        self.b_region = QPushButton(icons.icon("crop", theme.MIST, theme.GOLD2), "  منطقة محددة")
+        grp = QButtonGroup(self)
+        for b in (self.b_full, self.b_region):
+            b.setObjectName("Seg"); b.setCheckable(True); grp.addButton(b); seg.addWidget(b)
+        self.b_full.clicked.connect(ctrl.use_full_screen)
+        self.b_region.clicked.connect(ctrl.select_region)
+        l.addLayout(seg)
+        self.region_lbl = hint("")
+        l.addWidget(self.region_lbl)
+        l.addWidget(hint("نصيحة: تحديد منطقة الحوار أو الترجمة فقط أسرع وأدق، ويقلل استهلاك الجهاز."))
+        self.v.addWidget(c)
+
+        c2, l2 = card()
+        l2.addWidget(title("مكان عرض الترجمة — شاشة أو تلفزيون", "tv"))
+        self.out_screen = QComboBox(); self.out_screen.currentIndexChanged.connect(self._pick_out)
+        l2.addWidget(row("اعرض الترجمة على", self.out_screen))
+        l2.addWidget(hint("يدعم أي شاشة أو تلفزيون (LG، Samsung وغيرها) متصل بالكمبيوتر كشاشة عرض عبر HDMI أو DisplayPort. "
+                          "لا يمكن عرض الترجمة فوق تطبيقات التلفزيون نفسه بدون كمبيوتر."))
+        self.v.addWidget(c2)
+
+        c3, l3 = card()
+        l3.addWidget(title("سرعة الالتقاط والحساسية", "zap"))
+        self.s_int = ValueSlider(100, 1500, 50, " ms", 300)
+        self.s_int.valueChanged.connect(lambda v: self.save("capture.interval_ms", int(v), None))
+        self.s_stable = ValueSlider(0, 1500, 50, " ms", 250)
+        self.s_stable.valueChanged.connect(lambda v: self.save("capture.stable_ms", int(v), None))
+        self.s_sens = ValueSlider(1, 20, 0.5, "", 3, 1)
+        self.s_sens.valueChanged.connect(lambda v: self.save("capture.sensitivity", float(v), None))
+        l3.addWidget(row("فحص الشاشة كل", self.s_int, "أقل = أسرع استجابة وأعلى استهلاكاً"))
+        l3.addWidget(row("انتظار ثبات النص", self.s_stable, "يمنع ترجمة النص وهو يُكتب حرفاً حرفاً"))
+        l3.addWidget(row("حساسية التغيير", self.s_sens, "أعلى = يتجاهل الحركة الخفيفة في الخلفية"))
+        self.v.addWidget(self.advanced(c3))
+        self.v.addStretch(1)
+        ctrl.profile_changed.connect(self.refresh)
+        ctrl.capture_updated.connect(self.refresh)
+        self.refresh()
+
+    def refresh(self):
+        c = self.prof["capture"]
+        try:
+            mons = self.ctrl.monitors()
+        except Exception:
+            mons = []
+        self.map.set_data(mons, c["monitor"], None if c["full"] else c["region"])
+        self.b_full.setChecked(c["full"]); self.b_region.setChecked(not c["full"])
+        self.region_lbl.setText("يقرأ الشاشة كاملة." if c["full"] or not c["region"] else
+                                f"المنطقة المحددة: {c['region'][2]}×{c['region'][3]} بكسل عند ({c['region'][0]}، {c['region'][1]}).")
+        self.out_screen.blockSignals(True); self.out_screen.clear()
+        for i, s in enumerate(QGuiApplication.screens(), 1):
+            self.out_screen.addItem(f"{i}. {screen_label(s)}", i)
+        idx = max(0, self.out_screen.findData(self.prof["display"]["screen"]["monitor"]))
+        self.out_screen.setCurrentIndex(idx); self.out_screen.blockSignals(False)
+        self.s_int.setValue(c["interval_ms"]); self.s_stable.setValue(c["stable_ms"]); self.s_sens.setValue(c["sensitivity"])
+
+    def _pick_monitor(self, i):
+        self.save("capture.monitor", i, "capture")
+        if self.prof["display"]["screen"]["monitor"] != i and len(QGuiApplication.screens()) > 1:
+            pass
+
+    def _pick_out(self, _):
+        self.save("display.screen.monitor", self.out_screen.currentData())
+        self.save("display.screen.custom_pos", None)
+
+
+# ======================================================================= look
+class LookPage(Page):
+    title_text = "المظهر"
+
+    def __init__(self, ctrl):
+        super().__init__(ctrl)
+        seg = QHBoxLayout()
+        self.t_screen = QPushButton(icons.icon("monitor", theme.MIST, theme.GOLD2), "  إعدادات وضع الشاشة")
+        self.t_vr = QPushButton(icons.icon("vr", theme.MIST, theme.GOLD2), "  إعدادات الواقع الافتراضي")
+        grp = QButtonGroup(self)
+        for b in (self.t_screen, self.t_vr):
+            b.setObjectName("Seg"); b.setCheckable(True); grp.addButton(b); seg.addWidget(b)
+        self.v.addLayout(seg)
+        self.stack = QStackedWidget()
+        self.v.addWidget(self.stack)
+        self.t_screen.clicked.connect(lambda: self.stack.setCurrentIndex(0))
+        self.t_vr.clicked.connect(lambda: self.stack.setCurrentIndex(1))
+        self.t_screen.setChecked(True)
+
+        # ---- screen
+        sw = QWidget(); sv = QVBoxLayout(sw); sv.setContentsMargins(0, 0, 0, 0); sv.setSpacing(14)
+        self.prev = SubtitlePreview(230); sv.addWidget(self.prev)
+        grid = QHBoxLayout(); grid.setSpacing(14)
+        c1, l1 = card(); l1.addWidget(title("الخط والألوان", "palette"))
+        self.font = QFontComboBox(); self.font.setMaximumWidth(240)
+        self.font.currentFontChanged.connect(lambda f: self._s("font_family", f.family()))
+        self.size = ValueSlider(14, 80, 1, " px", 26); self.size.valueChanged.connect(lambda v: self._s("font_size", int(v)))
+        self.bold = QCheckBox(); self.bold.toggled.connect(lambda b: self._s("bold", b))
+        self.color = ColorPick(["#FFFFFF", "#FFE14D", "#F6DCA0", "#9FE8FF", "#B7FFB0"], "#FFFFFF")
+        self.color.changed.connect(lambda c: self._s("color", c))
+        self.bg = ColorPick(["#05080F", "#000000", "#1A1204", "#0B2A3A"], "#05080F")
+        self.bg.changed.connect(lambda c: self._s("bg", c))
+        self.opa = ValueSlider(0, 100, 5, "%", 72); self.opa.valueChanged.connect(lambda v: self._s("bg_opacity", int(v)))
+        for lab, w in (("نوع الخط", self.font), ("حجم الخط", self.size), ("خط عريض", self.bold), ("لون الكلام", self.color),
+                       ("لون الخلفية", self.bg), ("شفافية الخلفية", self.opa)):
+            l1.addWidget(row(lab, w))
+        grid.addWidget(c1, 1)
+        c2, l2 = card(); l2.addWidget(title("المكان والحجم", "move"))
+        self.anchor = QComboBox()
+        for k, t in (("bottom", "أسفل الشاشة"), ("center", "وسط الشاشة"), ("top", "أعلى الشاشة")):
+            self.anchor.addItem(t, k)
+        self.anchor.currentIndexChanged.connect(lambda _: (self._s("anchor", self.anchor.currentData()), self._s("custom_pos", None)))
+        self.offset = ValueSlider(0, 600, 10, " px", 80); self.offset.valueChanged.connect(lambda v: self._s("offset", int(v)))
+        self.width = ValueSlider(30, 100, 5, "%", 70); self.width.valueChanged.connect(lambda v: self._s("width_pct", int(v)))
+        self.orig = QCheckBox(); self.orig.toggled.connect(lambda b: self._s("show_original", b))
+        self.lines = ValueSlider(1, 8, 1, "", 4); self.lines.valueChanged.connect(lambda v: self._s("max_lines", int(v)))
+        self.fade = ValueSlider(0, 800, 20, " ms", 220); self.fade.valueChanged.connect(lambda v: self._s("fade_ms", int(v)))
+        l2.addWidget(row("موضع الترجمة", self.anchor)); l2.addWidget(row("البعد عن الحافة", self.offset))
+        l2.addWidget(row("عرض الترجمة", self.width)); l2.addWidget(row("إظهار النص الأصلي تحتها", self.orig))
+        l2.addWidget(self.advanced(row("أقصى عدد فقرات", self.lines)))
+        l2.addWidget(self.advanced(row("مدة ظهور النص بنعومة", self.fade)))
+        mv = QHBoxLayout()
+        b_move = QPushButton(icons.icon("move", theme.GOLD2), "  حرّك الترجمة بالماوس"); b_move.clicked.connect(ctrl.edit_overlay_position)
+        b_reset = QPushButton("إرجاع للموضع التلقائي"); b_reset.clicked.connect(lambda: self._s("custom_pos", None))
+        mv.addWidget(b_move); mv.addWidget(b_reset); l2.addLayout(mv)
+        grid.addWidget(c2, 1)
+        sv.addLayout(grid)
+        self.stack.addWidget(sw)
+
+        # ---- vr
+        vw = QWidget(); vv = QVBoxLayout(vw); vv.setContentsMargins(0, 0, 0, 0); vv.setSpacing(14)
+        self.vprev = SubtitlePreview(230); vv.addWidget(self.vprev)
+        c3, l3 = card(); l3.addWidget(title("لوحة الترجمة داخل النظارة", "vr"))
+        l3.addWidget(hint("يعمل مع أي نظارة تعمل عبر SteamVR: Valve Index وHTC Vive وMeta Quest (عبر Link أو Air Link أو Virtual Desktop) وPico وWindows MR. "
+                          "تتبع اللوحة رأسك على المسافة والارتفاع المحددين."))
+        self.vdist = ValueSlider(0.5, 4.0, 0.1, " م", 1.4, 1); self.vdist.valueChanged.connect(lambda v: self._v("distance_m", v))
+        self.vwid = ValueSlider(0.4, 3.0, 0.1, " م", 1.1, 1); self.vwid.valueChanged.connect(lambda v: self._v("width_m", v))
+        self.vh = ValueSlider(-1.0, 1.0, 0.05, " م", -0.35, 2); self.vh.valueChanged.connect(lambda v: self._v("height_m", v))
+        self.vsize = ValueSlider(20, 90, 2, " px", 44); self.vsize.valueChanged.connect(lambda v: self._v("font_size", int(v)))
+        self.vcolor = ColorPick(["#FFFFFF", "#FFE14D", "#F6DCA0", "#9FE8FF"], "#FFFFFF"); self.vcolor.changed.connect(lambda c: self._v("color", c))
+        self.vopa = ValueSlider(0, 100, 5, "%", 80); self.vopa.valueChanged.connect(lambda v: self._v("bg_opacity", int(v)))
+        self.vorig = QCheckBox(); self.vorig.toggled.connect(lambda b: self._v("show_original", b))
+        for lab, w in (("المسافة أمام العين", self.vdist), ("عرض اللوحة", self.vwid), ("الارتفاع (سالب = أسفل النظر)", self.vh),
+                       ("حجم الخط", self.vsize), ("لون الكلام", self.vcolor), ("شفافية الخلفية", self.vopa), ("إظهار النص الأصلي", self.vorig)):
+            l3.addWidget(row(lab, w))
+        b_vr = QPushButton(icons.icon("vr", theme.GOLD2), "  اختبر اللوحة في النظارة الآن"); b_vr.clicked.connect(ctrl.test_vr)
+        l3.addWidget(b_vr)
+        vv.addWidget(c3)
+        self.stack.addWidget(vw)
+        self.v.addStretch(1)
+        ctrl.profile_changed.connect(self.refresh)
+        self.refresh()
+
+    def _s(self, key, val):
+        self.save(f"display.screen.{key}", val)
+        self.prev.set_style(self.prof["display"]["screen"])
+
+    def _v(self, key, val):
+        self.save(f"display.vr.{key}", val)
+        self.vprev.set_style(self.prof["display"]["vr"], vr=True)
+
+    def refresh(self):
+        s, v = self.prof["display"]["screen"], self.prof["display"]["vr"]
+        widgets = [self.font, self.anchor, self.bold, self.orig, self.vorig]
+        for w in widgets:
+            w.blockSignals(True)
+        self.font.setCurrentFont(QFont(s["font_family"] or "Noto Sans Arabic"))
+        self.size.setValue(s["font_size"]); self.bold.setChecked(s["bold"]); self.color.set(s["color"]); self.bg.set(s["bg"])
+        self.opa.setValue(s["bg_opacity"]); self.anchor.setCurrentIndex(max(0, self.anchor.findData(s["anchor"])))
+        self.offset.setValue(s["offset"]); self.width.setValue(s["width_pct"]); self.orig.setChecked(s["show_original"])
+        self.lines.setValue(s["max_lines"]); self.fade.setValue(s["fade_ms"])
+        self.vdist.setValue(v["distance_m"]); self.vwid.setValue(v["width_m"]); self.vh.setValue(v["height_m"])
+        self.vsize.setValue(v["font_size"]); self.vcolor.set(v["color"]); self.vopa.setValue(v["bg_opacity"]); self.vorig.setChecked(v["show_original"])
+        for w in widgets:
+            w.blockSignals(False)
+        self.prev.set_style(s); self.vprev.set_style(v, vr=True)
+        if self.prof["display"]["mode"] == "vr":
+            self.t_vr.setChecked(True); self.stack.setCurrentIndex(1)
+
+
+# ======================================================================= engines
+class EnginesPage(Page):
+    title_text = "المحركات واللغة"
+
+    def __init__(self, ctrl):
+        super().__init__(ctrl)
+        s = ctrl.settings
+        c, l = card(); l.addWidget(title("اللغة وأسلوب الترجمة", "lang"))
+        self.src = QComboBox(); self.tgt = QComboBox()
+        for code, name in LANGUAGES:
+            self.src.addItem(name, code)
+            if code != "auto":
+                self.tgt.addItem(name, code)
+        self.src.currentIndexChanged.connect(lambda _: self.save("lang.src", self.src.currentData(), "restart"))
+        self.tgt.currentIndexChanged.connect(lambda _: self.save("lang.tgt", self.tgt.currentData(), "restart"))
+        self.style = QComboBox()
+        for k, t in (("gaming", "فصحى الألعاب (طبيعية ومختصرة)"), ("formal", "فصحى رسمية"), ("saudi", "عامية سعودية — محرك Claude"),
+                     ("close", "قريبة من الأصل")):
+            self.style.addItem(t, k)
+        self.style.currentIndexChanged.connect(lambda _: self.save("translate.style", self.style.currentData(), None))
+        l.addWidget(row("لغة اللعبة", self.src, "«اكتشاف تلقائي» يعرف لغة النص بنفسه"))
+        l.addWidget(row("ترجم إلى", self.tgt))
+        l.addWidget(row("أسلوب الترجمة", self.style, "الأساليب تؤثر بالكامل مع محرك Claude"))
+        self.ocr = QComboBox()
+        for k, t in (("auto", "تلقائي (الأخف المتاح)"), ("windows", "Windows OCR — الأخف، يستخدم لغات ويندوز"), ("rapid", "RapidOCR — مدمج، قوي في الإنجليزية")):
+            self.ocr.addItem(t, k)
+        self.ocr.currentIndexChanged.connect(lambda _: self.save("ocr.engine", self.ocr.currentData(), "restart"))
+        l.addWidget(self.advanced(row("محرك قراءة النص (OCR)", self.ocr)))
+        self.v.addWidget(c)
+
+        c2, l2 = card(); l2.addWidget(title("محركات الترجمة — بالترتيب", "spark"))
+        l2.addWidget(hint("يجرّب البرنامج المحرك الأول، وإن تعطل أو انقطع ينتقل تلقائياً للذي بعده. فعّل المحركات التي تريدها ورتّبها بالأسهم."))
+        hl = QHBoxLayout()
+        self.list = QListWidget(); self.list.setMinimumHeight(170)
+        self.list.itemChanged.connect(self._save_engines)
+        hl.addWidget(self.list, 1)
+        bv = QVBoxLayout()
+        up = QPushButton(icons.icon("up", theme.GOLD2), ""); up.clicked.connect(lambda: self._move(-1))
+        dn = QPushButton(icons.icon("down", theme.GOLD2), ""); dn.clicked.connect(lambda: self._move(1))
+        bv.addWidget(up); bv.addWidget(dn); bv.addStretch(1); hl.addLayout(bv)
+        l2.addLayout(hl)
+        self.v.addWidget(c2)
+
+        c3, l3 = card(); l3.addWidget(title("مفاتيح المحركات الاحترافية", "keyboard"))
+        e = s.data["engines"]
+        self.ckey = QLineEdit(e["claude_key"]); self.ckey.setEchoMode(QLineEdit.Password); self.ckey.setPlaceholderText("sk-ant-…")
+        self.ckey.setLayoutDirection(Qt.LeftToRight); self.ckey.editingFinished.connect(lambda: self._eng("claude_key", self.ckey.text().strip()))
+        self.cmodel = QLineEdit(e["claude_model"]); self.cmodel.setLayoutDirection(Qt.LeftToRight)
+        self.cmodel.editingFinished.connect(lambda: self._eng("claude_model", self.cmodel.text().strip() or "claude-haiku-5-5"))
+        self.dkey = QLineEdit(e["deepl_key"]); self.dkey.setEchoMode(QLineEdit.Password); self.dkey.setLayoutDirection(Qt.LeftToRight)
+        self.dkey.editingFinished.connect(lambda: self._eng("deepl_key", self.dkey.text().strip()))
+        self.mail = QLineEdit(e["mymemory_email"]); self.mail.setLayoutDirection(Qt.LeftToRight); self.mail.setPlaceholderText("اختياري — يرفع الحد اليومي")
+        self.mail.editingFinished.connect(lambda: self._eng("mymemory_email", self.mail.text().strip()))
+        for w in (self.ckey, self.dkey, self.mail, self.cmodel):
+            w.setMinimumWidth(300)
+        l3.addWidget(row("مفتاح Claude API", self.ckey, "الأذكى في فهم السياق والحوارات. احصل عليه من console.anthropic.com — التكلفة على حسابك."))
+        l3.addWidget(self.advanced(row("نموذج Claude", self.cmodel)))
+        l3.addWidget(row("مفتاح DeepL", self.dkey, "المفاتيح المجانية تنتهي بـ :fx"))
+        l3.addWidget(self.advanced(row("بريد MyMemory", self.mail)))
+        l3.addWidget(hint("تُحفظ المفاتيح في ملف إعداداتك على جهازك فقط."))
+        self.v.addWidget(c3)
+
+        c4, l4 = card(); l4.addWidget(title("اختبار المحركات على جهازك", "check"))
+        l4.addWidget(hint("يرسل جملة تجريبية لكل محرك ويعرض النتيجة والزمن — استخدمه عند أي مشكلة في الترجمة."))
+        self.test_btn = QPushButton(icons.icon("play", "#1A1204"), "  اختبر المحركات الآن"); self.test_btn.setObjectName("Primary")
+        self.test_btn.clicked.connect(self._test)
+        l4.addWidget(self.test_btn, 0, Qt.AlignRight)
+        self.test_out = QLabel(""); self.test_out.setWordWrap(True); self.test_out.setTextFormat(Qt.RichText)
+        l4.addWidget(self.test_out)
+        self.v.addWidget(c4)
+        self.v.addStretch(1)
+        ctrl.engines_tested.connect(self._tested)
+        ctrl.profile_changed.connect(self.refresh)
+        self.refresh()
+
+    def refresh(self):
+        p, e = self.prof, self.ctrl.settings.data["engines"]
+        for w in (self.src, self.tgt, self.style, self.ocr):
+            w.blockSignals(True)
+        self.src.setCurrentIndex(max(0, self.src.findData(p["lang"]["src"])))
+        self.tgt.setCurrentIndex(max(0, self.tgt.findData(p["lang"]["tgt"])))
+        self.style.setCurrentIndex(max(0, self.style.findData(p["translate"]["style"])))
+        self.ocr.setCurrentIndex(max(0, self.ocr.findData(p["ocr"]["engine"])))
+        for w in (self.src, self.tgt, self.style, self.ocr):
+            w.blockSignals(False)
+        self.list.blockSignals(True); self.list.clear()
+        for eid in e["order"]:
+            it = QListWidgetItem(ENGINE_INFO[eid]["name"]); it.setData(Qt.UserRole, eid)
+            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+            it.setCheckState(Qt.Checked if e["enabled"].get(eid) else Qt.Unchecked)
+            self.list.addItem(it)
+        self.list.blockSignals(False)
+
+    def _eng(self, key, val):
+        self.ctrl.settings.set(f"engines.{key}", val)
+        if key in ("claude_key", "deepl_key") and val:
+            eid = key.split("_")[0]
+            self.ctrl.settings.set(f"engines.enabled.{eid}", True)
+            self.refresh()
+
+    def _save_engines(self, *_):
+        order, enabled = [], {}
+        for i in range(self.list.count()):
+            it = self.list.item(i); eid = it.data(Qt.UserRole)
+            order.append(eid); enabled[eid] = it.checkState() == Qt.Checked
+        self.ctrl.settings.set("engines.order", order)
+        self.ctrl.settings.set("engines.enabled", enabled)
+
+    def _move(self, d):
+        r = self.list.currentRow()
+        if r < 0 or not (0 <= r + d < self.list.count()):
+            return
+        it = self.list.takeItem(r); self.list.insertItem(r + d, it); self.list.setCurrentRow(r + d)
+        self._save_engines()
+
+    def _test(self):
+        self.test_btn.setEnabled(False); self.test_out.setText("جارٍ الاختبار…")
+        self.ctrl.test_engines()
+
+    def _tested(self, rows):
+        self.test_btn.setEnabled(True)
+        out = []
+        for r in rows:
+            name = ENGINE_INFO[r["id"]]["name"]
+            if r["ok"]:
+                out.append(f"<p><b style='color:{theme.OK}'>✓ {name}</b> — {r['ms']} ms<br><span>{r['text']}</span></p>")
+            else:
+                out.append(f"<p><b style='color:{theme.ERR}'>✗ {name}</b> — {r['error']}</p>")
+        self.test_out.setText("".join(out))
+
+
+# ======================================================================= games
+class GamesPage(Page):
+    title_text = "الألعاب"
+
+    def __init__(self, ctrl):
+        super().__init__(ctrl)
+        c, l = card(gold=True); l.addWidget(title("إعدادات مستقلة لكل لعبة", "games"))
+        l.addWidget(hint("كل لعبة تحفظ منطقتها وشاشتها وشكل الترجمة ولغتها ومحركها. عند فتح لعبة محفوظة يبدّل البرنامج إعداداتها تلقائياً."))
+        self.auto = QCheckBox("تبديل الإعدادات تلقائياً عند فتح لعبة محفوظة")
+        self.auto.setChecked(ctrl.settings.data["auto_profile"])
+        self.auto.toggled.connect(lambda b: ctrl.settings.set("auto_profile", b))
+        l.addWidget(self.auto)
+        self.fg = hint("")
+        l.addWidget(self.fg)
+        self.v.addWidget(c)
+        c2, l2 = card()
+        self.list = QListWidget(); self.list.setMinimumHeight(240)
+        self.list.itemDoubleClicked.connect(lambda _: self._activate())
+        l2.addWidget(self.list)
+        b = QHBoxLayout()
+        for ic, t, fn, obj in (("check", "تفعيل", self._activate, "Primary"), ("plus", "أضف من البرامج المفتوحة", self._add_running, ""),
+                               ("edit", "إضافة يدوية", self._add_manual, ""), ("trash", "حذف", self._delete, "Danger")):
+            btn = QPushButton(icons.icon(ic, "#1A1204" if obj == "Primary" else theme.GOLD2), "  " + t)
+            if obj:
+                btn.setObjectName(obj)
+            btn.clicked.connect(fn); b.addWidget(btn)
+        l2.addLayout(b)
+        self.v.addWidget(c2)
+        self.v.addStretch(1)
+        ctrl.profile_changed.connect(self.refresh)
+        ctrl.game_changed.connect(lambda exe: self.fg.setText(f"البرنامج في المقدمة الآن: {exe or '—'}"))
+        self.refresh()
+
+    def refresh(self):
+        self.list.clear()
+        s = self.ctrl.settings
+        for pid, p in s.data["profiles"].items():
+            mark = "●  " if pid == s.profile_id else "     "
+            it = QListWidgetItem(f"{mark}{p['name']}" + (f"   —   {p['exe']}" if p["exe"] else "   —   تُستخدم لأي لعبة غير محفوظة"))
+            it.setData(Qt.UserRole, pid)
+            self.list.addItem(it)
+
+    def _sel(self):
+        it = self.list.currentItem()
+        return it.data(Qt.UserRole) if it else None
+
+    def _activate(self):
+        pid = self._sel()
+        if pid:
+            self.ctrl.switch_profile(pid)
+
+    def _delete(self):
+        pid = self._sel()
+        if not pid or pid == "default":
+            self.ctrl.toast("لا يمكن حذف الإعدادات العامة", err=True); return
+        if QMessageBox.question(self, "حذف", "حذف إعدادات هذه اللعبة؟") == QMessageBox.Yes:
+            self.ctrl.settings.delete_profile(pid); self.ctrl.profile_changed.emit()
+
+    def _add_manual(self):
+        name, ok = QInputDialog.getText(self, "إضافة لعبة", "اسم اللعبة:")
+        if not ok or not name.strip():
+            return
+        exe, ok = QInputDialog.getText(self, "إضافة لعبة", "اسم ملف التشغيل (مثل eldenring.exe):")
+        if ok:
+            self.ctrl.add_game(name.strip(), exe.strip())
+
+    def _add_running(self):
+        procs = self.ctrl.running_games()
+        if not procs:
+            self.ctrl.toast("لم يُعثر على برامج بنوافذ مفتوحة", err=True); return
+        exe, ok = QInputDialog.getItem(self, "أضف لعبة مفتوحة", "اختر اللعبة من البرامج المفتوحة:", procs, 0, False)
+        if ok and exe:
+            self.ctrl.add_game(exe.rsplit(".", 1)[0], exe)
+
+
+# ======================================================================= history
+class HistoryPage(Page):
+    title_text = "السجل"
+
+    def __init__(self, ctrl):
+        super().__init__(ctrl)
+        top = QHBoxLayout()
+        self.search = QLineEdit(); self.search.setPlaceholderText("ابحث في الأصل أو الترجمة أو اسم اللعبة…")
+        self.search.textChanged.connect(lambda _: self.t.start(250))
+        top.addWidget(self.search, 1)
+        for t, fn, obj in (("تصدير", self._export, ""), ("مسح السجل", self._clear, "Danger")):
+            b = QPushButton(t); b.clicked.connect(fn)
+            if obj:
+                b.setObjectName(obj)
+            top.addWidget(b)
+        self.v.addLayout(top)
+        self.table = QTableWidget(0, 4)
+        self.table.setHorizontalHeaderLabels(["الوقت", "اللعبة", "النص الأصلي", "الترجمة (قابلة للتعديل)"])
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.setWordWrap(True)
+        self.table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
+        self.table.setMinimumHeight(420)
+        self.table.itemChanged.connect(self._edited)
+        self.v.addWidget(self.table)
+        self.v.addWidget(hint("نقرتان على أي ترجمة لتعديلها. التعديل يُحفظ في ذاكرة البرنامج ويُستخدم تلقائياً كلما ظهر النص نفسه."))
+        mem = QHBoxLayout()
+        self.mem = hint(""); mem.addWidget(self.mem, 1)
+        b = QPushButton("مسح ذاكرة الترجمة"); b.clicked.connect(self._clear_mem); mem.addWidget(b)
+        self.v.addLayout(mem)
+        self.t = QTimer(self); self.t.setSingleShot(True); self.t.timeout.connect(self.refresh)
+        ctrl.result.connect(lambda _: self.isVisible() and self.t.start(400))
+
+    def refresh(self):
+        rows = self.ctrl.store.history(self.search.text().strip(), 500)
+        self.table.blockSignals(True)
+        self.table.setRowCount(len(rows))
+        for i, r in enumerate(rows):
+            vals = [dt.datetime.fromtimestamp(r["ts"]).strftime("%Y-%m-%d %H:%M"), r["game"], r["src_text"], r["translation"]]
+            for j, v in enumerate(vals):
+                it = QTableWidgetItem(v)
+                if j < 3:
+                    it.setFlags(it.flags() & ~Qt.ItemIsEditable)
+                if j == 2:
+                    it.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                it.setData(Qt.UserRole, r["id"])
+                self.table.setItem(i, j, it)
+        self.table.resizeRowsToContents()
+        self.table.blockSignals(False)
+        st = self.ctrl.store.stats()
+        self.mem.setText(f"ذاكرة الترجمة: {st['memory']} نص محفوظ، وفّرت {st['hits']} طلب ترجمة • تعديلاتك: {st['overrides']}")
+
+    def _edited(self, it):
+        if it.column() == 3 and it.text().strip():
+            self.ctrl.store.edit_history(it.data(Qt.UserRole), it.text().strip())
+            self.ctrl.toast("حُفظ تعديلك وسيُستخدم تلقائياً")
+
+    def _export(self):
+        path, _ = QFileDialog.getSaveFileName(self, "تصدير السجل", str(data_dir() / "arabize-history.csv"), "CSV (*.csv);;Text (*.txt)")
+        if not path:
+            return
+        rows = self.ctrl.store.history(self.search.text().strip(), 5000)
+        if path.endswith(".txt"):
+            with open(path, "w", encoding="utf-8-sig") as f:
+                for r in rows:
+                    f.write(f"[{dt.datetime.fromtimestamp(r['ts']):%Y-%m-%d %H:%M}] {r['game']}\n{r['src_text']}\n{r['translation']}\n\n")
+        else:
+            with open(path, "w", encoding="utf-8-sig", newline="") as f:
+                w = csv.writer(f); w.writerow(["time", "game", "original", "translation", "engine"])
+                for r in rows:
+                    w.writerow([dt.datetime.fromtimestamp(r["ts"]).isoformat(" ", "minutes"), r["game"], r["src_text"], r["translation"], r["engine"]])
+        self.ctrl.toast(f"تم التصدير: {os.path.basename(path)}")
+
+    def _clear(self):
+        if QMessageBox.question(self, "مسح السجل", "مسح كل السجل؟ لن تتأثر ذاكرة الترجمة ولا تعديلاتك.") == QMessageBox.Yes:
+            self.ctrl.store.clear_history(); self.refresh()
+
+    def _clear_mem(self):
+        if QMessageBox.question(self, "مسح الذاكرة", "مسح ذاكرة الترجمة؟ ستُطلب الترجمات من جديد عند الحاجة. تعديلاتك اليدوية تبقى.") == QMessageBox.Yes:
+            n = self.ctrl.store.clear_memory(); self.refresh(); self.ctrl.toast(f"حُذف {n} نص من الذاكرة")
+
+
+# ======================================================================= hotkeys
+class HotkeysPage(Page):
+    title_text = "الاختصارات"
+    NAMES = {"toggle": "تشغيل / إيقاف الترجمة", "region": "تحديد منطقة الترجمة", "hide": "إخفاء / إظهار الترجمة",
+             "mode": "التبديل بين الشاشة والواقع الافتراضي", "retranslate": "ترجم الشاشة الآن"}
+
+    def __init__(self, ctrl):
+        super().__init__(ctrl)
+        c, l = card(); l.addWidget(title("اختصارات تعمل من داخل اللعبة", "keyboard"))
+        l.addWidget(hint("اضغط على الخانة ثم اضغط الاختصار الجديد. تعمل الاختصارات حتى واللعبة في المقدمة."))
+        self.edits = {}
+        for k, name in self.NAMES.items():
+            e = QKeySequenceEdit(); e.setMaximumSequenceLength(1) if hasattr(e, "setMaximumSequenceLength") else None
+            e.setLayoutDirection(Qt.LeftToRight); e.setMinimumWidth(220)
+            e.editingFinished.connect(self._save)
+            self.edits[k] = e
+            l.addWidget(row(name, e))
+        b = QHBoxLayout()
+        r = QPushButton("استعادة الافتراضي"); r.clicked.connect(self._reset); b.addWidget(r); b.addStretch(1)
+        l.addLayout(b)
+        self.status = hint(""); l.addWidget(self.status)
+        l.addWidget(hint("إن كانت اللعبة تعمل كمسؤول (Administrator) شغّل عرب لعبتك كمسؤول أيضاً حتى تصلها الاختصارات."))
+        self.v.addWidget(c); self.v.addStretch(1)
+        self.refresh()
+
+    def refresh(self):
+        hk = self.ctrl.settings.data["hotkeys"]
+        for k, e in self.edits.items():
+            e.blockSignals(True); e.setKeySequence(QKeySequence(hk.get(k, ""))); e.blockSignals(False)
+
+    def _save(self):
+        hk = {k: e.keySequence().toString(QKeySequence.PortableText) for k, e in self.edits.items()}
+        self.ctrl.settings.set("hotkeys", hk)
+        bad = self.ctrl.apply_hotkeys()
+        self.status.setText("تم الحفظ." if not bad else "لم يُفعّل: " + "، ".join(self.NAMES[b] for b in bad))
+
+    def _reset(self):
+        self.ctrl.settings.set("hotkeys", dict(DEFAULT_HOTKEYS)); self.refresh(); self._save()
+
+
+# ======================================================================= help
+class HelpPage(Page):
+    title_text = "المساعدة"
+    FAQ = [
+        ("الترجمة لا تظهر فوق اللعبة", "شغّل اللعبة بوضع «نافذة بلا حواف» (Borderless Windowed) بدل «ملء الشاشة الحصري» (Exclusive Fullscreen)؛ وضع الحصري يمنع أي برنامج من الظهور فوقها. وتأكد أن الترجمة ليست مخفية (Ctrl+Shift+H)."),
+        ("لا يقرأ النص أو يقرأه خطأ", "حدّد منطقة الحوار فقط بدل الشاشة كاملة، واجعل حجم الترجمة في اللعبة أكبر إن أمكن. جرّب محرك القراءة الآخر من صفحة المحركات (الوضع المتقدم)."),
+        ("الترجمة بطيئة", "حدّد منطقة صغيرة، وقلّل «انتظار ثبات النص»، وفعّل محرك ترجمة واحد سريع. النصوص المتكررة تُترجم فوراً من الذاكرة."),
+        ("يظهر «بانتظار الإنترنت»", "انقطع الاتصال أو تعطل المحرك. البرنامج يعيد المحاولة تلقائياً وينتقل للمحرك التالي. استخدم «اختبر المحركات» لمعرفة السبب."),
+        ("الاختصارات لا تعمل داخل اللعبة", "إن كانت اللعبة تعمل كمسؤول، شغّل البرنامج كمسؤول أيضاً. وتأكد أن الاختصار غير مستخدم في اللعبة نفسها."),
+        ("التلفزيون لا يظهر", "وصّل التلفزيون بالكمبيوتر كشاشة عرض (HDMI)، وفعّله من إعدادات العرض في ويندوز، ثم افتح صفحة «الشاشة والمنطقة»."),
+        ("وضع VR لا يعمل", "شغّل SteamVR والنظارة متصلة أولاً، ثم اضغط «اختبر اللوحة في النظارة». نظارات Quest تعمل عبر Link أو Air Link أو Virtual Desktop."),
+    ]
+
+    def __init__(self, ctrl):
+        super().__init__(ctrl)
+        c, l = card(gold=True); l.addWidget(title("الدرس التعليمي", "play"))
+        l.addWidget(hint("شرح مرئي من الألف إلى الياء في 10 خطوات، مع أمثلة تجربها مباشرة."))
+        b = QPushButton(icons.icon("play", "#1A1204"), "  شاهد الدرس من جديد"); b.setObjectName("Primary"); b.clicked.connect(ctrl.show_tutorial)
+        l.addWidget(b, 0, Qt.AlignRight)
+        self.v.addWidget(c)
+        c2, l2 = card(); l2.addWidget(title("حل المشاكل الشائعة", "help"))
+        for q, a in self.FAQ:
+            ql = QLabel(f"<b style='color:{theme.GOLD2}'>{q}</b><br>{a}"); ql.setWordWrap(True); ql.setTextFormat(Qt.RichText)
+            ql.setContentsMargins(0, 4, 0, 8)
+            l2.addWidget(ql)
+        self.v.addWidget(c2)
+        c3, l3 = card(); l3.addWidget(title("عن البرنامج", "pad"))
+        l3.addWidget(QLabel(f"{APP_NAME_AR} | {APP_NAME_EN} — الإصدار {APP_VERSION}"))
+        l3.addWidget(hint(f"مجلد الإعدادات والذاكرة: {data_dir()}"))
+        ob = QPushButton("فتح مجلد الإعدادات"); ob.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(data_dir()))))
+        l3.addWidget(ob, 0, Qt.AlignRight)
+        self.v.addWidget(c3); self.v.addStretch(1)

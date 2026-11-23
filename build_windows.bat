@@ -1,0 +1,23 @@
+@echo off
+chcp 65001 >nul
+REM عرب لعبتك | Arabize Game — يبني ملف التشغيل لويندوز في مجلد dist\ArabizeGame
+REM المتطلب: Python 3.11 أو 3.12 (64-bit) من python.org مع خيار "Add to PATH"
+cd /d "%~dp0"
+if not exist .venv ( py -3.12 -m venv .venv 2>nul || py -3.11 -m venv .venv 2>nul || python -m venv .venv )
+call .venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+pip install -r requirements-dev.txt || goto :err
+echo.
+echo === تشغيل الاختبارات ===
+python -m pytest -q tests\test_core.py tests\test_ocr.py tests\test_windows.py || goto :err
+echo.
+echo === بناء البرنامج ===
+pyinstaller --noconfirm ArabizeGame.spec || goto :err
+echo.
+echo تم! شغّل: dist\ArabizeGame\ArabizeGame.exe
+pause
+exit /b 0
+:err
+echo حدث خطأ أثناء البناء — راجع الرسائل أعلاه.
+pause
+exit /b 1
