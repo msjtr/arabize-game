@@ -608,7 +608,8 @@ body.calm .aurora,body.calm .scene svg,body.calm .scene .sun,body.calm .go::befo
           <h3>ترجمة مباشرة من أي شاشة</h3>
           <p>شارك نافذة اللعبة أو الشاشة كاملة (ومنها التلفزيون المتصل بالكمبيوتر)، أو وجّه كاميرا الجوال إلى شاشة التلفزيون أو جهاز الألعاب. يقرأ الموقع النص كلما تغيّر ويترجمه فوراً.</p>
           <div class="row">
-            <button class="btn" id="lvScreen"><svg class="ic sm"><use href="#i-monitor"/></svg>شارك الشاشة أو نافذة اللعبة</button>
+            <button class="btn" id="lvGo"><svg class="ic sm"><use href="#i-cc"/></svg>ابدأ الترجمة فوق اللعبة</button>
+            <button class="btn ghost" id="lvScreen"><svg class="ic sm"><use href="#i-monitor"/></svg>شارك الشاشة فقط</button>
             <button class="btn ghost" id="lvCam"><svg class="ic sm"><use href="#i-cam"/></svg>كاميرا الجوال</button>
           </div>
         </div>
@@ -621,6 +622,7 @@ body.calm .aurora,body.calm .scene svg,body.calm .scene .sun,body.calm .go::befo
         <button class="tb" id="lvPip"><svg class="ic sm"><use href="#i-cc"/></svg>نافذة عائمة فوق اللعبة</button>
         <button class="tb danger" id="lvStop"><svg class="ic sm"><use href="#i-sq"/></svg>إيقاف</button>
       </div>
+      <p class="lvhint lvsteps" id="lvSteps">«ابدأ الترجمة فوق اللعبة» يفتح نافذة صغيرة تبقى فوق كل البرامج. اضغط فيها «اختر نافذة اللعبة»، واختر اللعبة، ثم ضع النافذة الصغيرة فوق اللعبة. يعمل على Chrome وEdge في الكمبيوتر، والأفضل أن تكون اللعبة في وضع «نافذة» أو «بلا حواف».</p>
       <p class="lvhint" id="lvHint" hidden>اسحب على الصورة لتحديد مكان الكلام فقط (صندوق الحوار مثلاً): القراءة تصبح أسرع وأدق. «النافذة العائمة» تبقى فوق اللعبة على Chrome وEdge في الكمبيوتر. للترجمة فوق اللعبة مباشرة بدون أي خطوة، استخدم برنامج الكمبيوتر.</p>
       <div class="lvphone" id="lvPhone" hidden>
         <h3><span class="i3d" data-i="pad" data-h="gold"></span><span id="lvPhoneT">ألعاب على الآيفون نفسه: ترجمة بنقرتين على ظهر الجوال</span></h3>
@@ -1583,7 +1585,8 @@ const normKey=t=>(t||"").toLowerCase().replace(/[^\p{L}\p{N}]+/gu," ").trim();
 function similar(a,b){a=normKey(a);b=normKey(b);if(!a||!b)return a===b;if(a===b)return true;
   const bg=s=>{const m=new Map();for(let i=0;i<s.length-1;i++){const k=s.slice(i,i+2);m.set(k,(m.get(k)||0)+1)}return m};
   const A=bg(a),B=bg(b);let inter=0;for(const [k,n] of A)inter+=Math.min(n,B.get(k)||0);return 2*inter/Math.max(1,a.length-1+b.length-1)>=.9}
-function lvChip(txt,cls){const c=$("lvChip");c.className="chip "+(cls||"");c.innerHTML=cls==="live"?"<i></i><span></span>":"<span></span>";c.lastChild.textContent=txt}
+function lvChip(txt,cls){const c=$("lvChip");c.className="chip "+(cls||"");c.innerHTML=cls==="live"?"<i></i><span></span>":"<span></span>";c.lastChild.textContent=txt;
+  if(LV.pip&&!LV.pip.closed){const st=LV.pip.document.getElementById("st");if(st)st.textContent=txt}}
 async function liveStart(kind){
   if(LV.stream)liveStop(true);
   try{
@@ -1597,19 +1600,23 @@ async function liveStart(kind){
     }
   }catch(e){
     if(e&&e.name==="NotAllowedError")return toast(kind==="screen"?"لم تُمنح مشاركة الشاشة":"لم يُمنح إذن الكاميرا",true);
-    return modal("تعذّر بدء القراءة المباشرة",kind==="screen"?"هذه الصفحة لا تسمح بمشاركة الشاشة هنا. افتح الموقع العام msjtr.github.io/arabize-game على Chrome أو Edge في الكمبيوتر، أو استخدم برنامج الكمبيوتر.":"تعذّر فتح الكاميرا. اسمح للموقع باستخدامها من إعدادات المتصفح ثم أعد المحاولة.")}
+    const why=e&&e.name?` (${e.name})`:"";
+    return modal("تعذّر بدء القراءة المباشرة",kind==="screen"?`المتصفح رفض مشاركة الشاشة${why}. افتح الموقع العام msjtr.github.io/arabize-game على Chrome أو Edge في الكمبيوتر. في ماك: اسمح للمتصفح بتسجيل الشاشة من إعدادات النظام ← الخصوصية والأمان. أو استخدم برنامج الكمبيوتر.`:`تعذّر فتح الكاميرا${why}. اسمح للموقع باستخدامها من إعدادات المتصفح ثم أعد المحاولة.`)}
   LV.kind=kind;const v=$("lvVideo");v.srcObject=LV.stream;try{await v.play()}catch(e){}
   LV.stream.getVideoTracks().forEach(tr=>tr.addEventListener("ended",()=>liveStop()));
   $("lvEmpty").hidden=true;$("lvBar").hidden=false;$("lvHint").hidden=false;$("lvStage").classList.add("on");
   LV.prev=null;LV.changed=true;LV.still=0;LV.seen="";drawSel();
-  clearInterval(LV.timer);LV.timer=setInterval(liveTick,kind==="cam"?800:600);
+  clearInterval(LV.timer);if(LV.worker)LV.worker.terminate();LV.worker=null;
+  try{LV.worker=new Worker(URL.createObjectURL(new Blob([`setInterval(()=>postMessage(0),${kind==="cam"?800:600})`],{type:"text/javascript"})));LV.worker.onmessage=liveTick}
+  catch(e){LV.timer=setInterval(liveTick,kind==="cam"?800:600)}
+  pipSync();pipUpdate();
   lvChip("يراقب الشاشة","live");setStatus("القراءة المباشرة تعمل: تُترجم النصوص كلما تغيّرت.","ok");
 }
 function liveStop(silent){
-  clearInterval(LV.timer);LV.timer=0;if(LV.ctl)LV.ctl.abort();
+  clearInterval(LV.timer);LV.timer=0;if(LV.worker){LV.worker.terminate();LV.worker=null}if(LV.ctl)LV.ctl.abort();
   if(LV.stream)LV.stream.getTracks().forEach(t=>t.stop());LV.stream=null;$("lvVideo").srcObject=null;
   $("lvEmpty").hidden=false;$("lvBar").hidden=true;$("lvHint").hidden=true;$("lvSel").hidden=true;$("lvStage").classList.remove("on");
-  if(!silent)setStatus("أُوقفت القراءة المباشرة.")}
+  LV.lines=[];pipSync();pipUpdate();if(!silent)setStatus("أُوقفت القراءة المباشرة.")}
 function videoBox(){const v=$("lvVideo"),r=v.getBoundingClientRect(),W=v.videoWidth||16,H=v.videoHeight||9;
   const k=Math.min(r.width/W,r.height/H),w=W*k,h=H*k;return {x:r.left+(r.width-w)/2,y:r.top+(r.height-h)/2,w,h}}
 function drawSel(){const el=$("lvSel");if(!LV.region||!LV.stream){el.hidden=true;return}
@@ -1629,7 +1636,8 @@ $("lvCam").onclick=()=>liveStart("cam");
 $("lvStop").onclick=()=>liveStop();
 $("lvRegion").onclick=()=>toast("اسحب على الصورة حول صندوق الكلام في اللعبة");
 $("lvFull").onclick=()=>{LV.region=null;store.set("ag_lvreg",null);drawSel();LV.prev=null;LV.changed=true;LV.seen="";toast("ستُقرأ الشاشة كاملة")};
-function liveFrame(){const v=$("lvVideo"),W=v.videoWidth,H=v.videoHeight;if(!W||!H)return null;
+function liveFrame(){let v=$("lvVideo");if(document.hidden&&LV.pip&&!LV.pip.closed){const pv=LV.pip.document.getElementById("v");if(pv&&pv.videoWidth)v=pv}
+  const W=v.videoWidth,H=v.videoHeight;if(!W||!H)return null;
   const [x,y,w,h]=LV.region||[0,0,1,1],sw=Math.max(8,Math.round(w*W)),sh=Math.max(8,Math.round(h*H));
   const c=document.createElement("canvas");c.width=sw;c.height=sh;c.getContext("2d").drawImage(v,Math.round(x*W),Math.round(y*H),sw,sh,0,0,sw,sh);return c}
 function grayThumb(c){const t=document.createElement("canvas");t.width=160;t.height=Math.max(1,Math.round(160*c.height/c.width));
@@ -1666,29 +1674,46 @@ async function liveRead(c){
   }finally{LV.busy=false;LV.ctl=null}}
 
 /* floating window above the game: Document Picture-in-Picture (Chrome/Edge), or a video picture-in-picture fallback */
-const PIP_CSS=`body{margin:0;background:#05060f;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden}
-#p{font-weight:700;line-height:1.6;text-align:center;padding:10px 18px;white-space:pre-wrap}#p .q{display:block;font-size:.62em;opacity:.95}`;
+const PIP_CSS=`*{box-sizing:border-box}html,body{margin:0;height:100%}body{display:flex;flex-direction:column;background:#05060f;color:#fff;font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;overflow:hidden}
+#bar{display:flex;align-items:center;gap:6px;padding:6px 8px;font-size:12px;background:rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.08)}
+#st{flex:1;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar button{font:inherit;font-weight:700;border:0;border-radius:8px;padding:6px 10px;cursor:pointer}
+#pick{background:linear-gradient(135deg,#f6dca0,#e7b964);color:#1a1204}#stop{background:rgba(255,255,255,.1);color:#fff}
+#p{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;line-height:1.6;text-align:center;padding:8px 16px;white-space:pre-wrap}
+#p .q{display:block;font-size:.62em}
+#v{position:fixed;left:6px;bottom:6px;width:96px;height:54px;object-fit:contain;opacity:.55;border-radius:6px;background:#000;pointer-events:none}`;
+function pipSync(){const w=LV.pip;if(!w||w.closed)return;const d=w.document;
+  d.getElementById("pick").hidden=!!LV.stream;d.getElementById("stop").hidden=!LV.stream;
+  const v=d.getElementById("v");if(LV.stream&&v.srcObject!==LV.stream){v.srcObject=LV.stream;v.play().catch(()=>{})}if(!LV.stream)v.srcObject=null;v.hidden=!LV.stream}
+async function pipDoc(){
+  if(LV.pip&&!LV.pip.closed){LV.pip.focus&&LV.pip.focus();return true}
+  if(!window.documentPictureInPicture)return false;
+  try{const w=await documentPictureInPicture.requestWindow({width:Math.round(Math.min(900,screen.availWidth*.55)),height:190});
+    LV.pip=w;const d=w.document;d.documentElement.dir="rtl";d.documentElement.lang="ar";
+    document.querySelectorAll('link[rel=stylesheet]').forEach(l=>{const n=d.createElement("link");n.rel="stylesheet";n.href=l.href;d.head.appendChild(n)});
+    const st=d.createElement("style");st.textContent=PIP_CSS;d.head.appendChild(st);
+    d.body.innerHTML='<div id="bar"><span id="st">جاهز</span><button id="pick">اختر نافذة اللعبة</button><button id="stop" hidden>إيقاف</button></div><div id="p"></div><video id="v" muted autoplay playsinline hidden></video>';
+    d.getElementById("pick").onclick=()=>liveStart("screen");     // a click here counts as the user's click for screen sharing
+    d.getElementById("stop").onclick=()=>liveStop();
+    w.addEventListener("pagehide",()=>{LV.pip=null});pipSync();pipUpdate();return true}
+  catch(e){LV.pipErr=(e&&e.name)||"Error";return false}}
 async function pipOpen(){
-  if(LV.pip&&!LV.pip.closed){LV.pip.focus&&LV.pip.focus();return}
-  if(window.documentPictureInPicture){
-    try{const w=await documentPictureInPicture.requestWindow({width:Math.round(Math.min(960,screen.availWidth*.6)),height:180});
-      LV.pip=w;const d=w.document;d.documentElement.dir="rtl";
-      document.querySelectorAll('link[rel=stylesheet]').forEach(l=>{const n=d.createElement("link");n.rel="stylesheet";n.href=l.href;d.head.appendChild(n)});
-      const st=d.createElement("style");st.textContent=PIP_CSS;d.head.appendChild(st);const p=d.createElement("div");p.id="p";d.body.appendChild(p);
-      w.addEventListener("pagehide",()=>{LV.pip=null});pipUpdate();toast("ضع النافذة العائمة فوق اللعبة؛ تبقى ظاهرة فوق كل النوافذ");return}catch(e){}
-  }
+  if(await pipDoc()){toast("ضع النافذة العائمة فوق اللعبة؛ تبقى ظاهرة فوق كل البرامج");return}
   const v=document.createElement("video");
   if(v.requestPictureInPicture&&document.pictureInPictureEnabled!==false&&HTMLCanvasElement.prototype.captureStream){
     try{const cv=document.createElement("canvas");cv.width=1280;cv.height=220;LV.pipCanvas=cv;pipUpdate();
       v.muted=true;v.srcObject=cv.captureStream(4);await v.play();await v.requestPictureInPicture();
       LV.pipVideo=v;clearInterval(LV.pipT);LV.pipT=setInterval(pipUpdate,1000);
-      v.addEventListener("leavepictureinpicture",()=>{clearInterval(LV.pipT);LV.pipCanvas=null;LV.pipVideo=null});return}catch(e){LV.pipCanvas=null}
+      v.addEventListener("leavepictureinpicture",()=>{clearInterval(LV.pipT);LV.pipCanvas=null;LV.pipVideo=null});return}catch(e){LV.pipCanvas=null;LV.pipErr=(e&&e.name)||"Error"}
   }
-  modal("النافذة العائمة غير مدعومة هنا","هذا المتصفح لا يدعم النوافذ العائمة. استخدم Chrome أو Edge على الكمبيوتر، أو «الشريط العائم» في هذه الصفحة، أو برنامج الكمبيوتر الذي يعرض الترجمة فوق اللعبة مباشرة.")}
+  modal("تعذّر فتح النافذة العائمة",`المتصفح رفض فتحها${LV.pipErr?" ("+LV.pipErr+")":""}. افتح الموقع العام msjtr.github.io/arabize-game في Chrome أو Edge على الكمبيوتر (وليس من داخل تطبيق آخر)، ثم أعد المحاولة. أو استخدم برنامج الكمبيوتر الذي يعرض الترجمة فوق اللعبة مباشرة.`)}
+async function liveBegin(){
+  if(await pipDoc()){setStatus("في النافذة العائمة اضغط «اختر نافذة اللعبة»، ثم ضعها فوق اللعبة.","ok");toast("اضغط «اختر نافذة اللعبة» في النافذة العائمة");return}
+  await liveStart("screen");if(LV.stream)pipOpen()}
 function pipUpdate(){
-  const lines=LV.lines.length?LV.lines:["الترجمة المباشرة ستظهر هنا"];
+  const lines=LV.lines.length?LV.lines:[LV.stream?"بانتظار نص في اللعبة…":"اضغط «اختر نافذة اللعبة» لتبدأ"];
   const quest=lines.filter(l=>/^المهمة\s*[:：]/.test(l)),main=lines.filter(l=>!/^المهمة\s*[:：]/.test(l)).slice(-3);
-  const col=S.subColor,bg=`rgba(${rgb(S.subBgC)},${Math.max(.75,S.subBgA/100)})`,font=`"${S.subFont}",sans-serif`;
+  const col=S.subColor,bg=`rgba(${rgb(S.subBgC)},${Math.max(.8,S.subBgA/100)})`,font=`"${S.subFont}",sans-serif`;
   if(LV.pip&&!LV.pip.closed){const d=LV.pip.document,p=d.getElementById("p");if(!p)return;d.body.style.background=bg;
     p.style.fontFamily=font;p.style.color=col;p.style.fontSize=Math.max(18,Math.min(40,S.subSize))+"px";p.dir=dirOf(main.join(" "));p.textContent=main.join("\n");
     if(quest.length){const q=d.createElement("span");q.className="q";q.style.color=S.accent;q.textContent=quest.join(" ");p.prepend(q)}}
@@ -1697,10 +1722,12 @@ function pipUpdate(){
     const wrap=[];for(const l of main){let cur="";for(const w of l.split(" ")){const tst=cur?cur+" "+w:w;if(x.measureText(tst).width>cv.width-60&&cur){wrap.push(cur);cur=w}else cur=tst}if(cur)wrap.push(cur)}
     const show=wrap.slice(-3);const lh=size*1.35,y0=cv.height/2-(show.length-1)*lh/2;
     x.textBaseline="middle";show.forEach((l,i)=>x.fillText(l,cv.width/2,y0+i*lh))}}
-$("lvPip").onclick=pipOpen;
+$("lvPip").onclick=pipOpen;$("lvGo").onclick=liveBegin;
 /* phones: a web page cannot read other apps' screens (iPhone/iPad never, Android browsers neither) */
 (()=>{const ua=navigator.userAgent,ios=/iPad|iPhone|iPod/.test(ua)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1),
   android=/Android/i.test(ua),canShare=!!(navigator.mediaDevices&&navigator.mediaDevices.getDisplayMedia)&&!ios&&!android;
+  $("lvGo").hidden=!canShare||!window.documentPictureInPicture;$("lvSteps").hidden=$("lvGo").hidden;
+  if(canShare&&!window.documentPictureInPicture){$("lvScreen").classList.remove("ghost");$("lvScreen").lastChild.textContent="شارك الشاشة أو نافذة اللعبة"}
   if(!canShare){$("lvScreen").hidden=true;$("lvCam").classList.remove("ghost");$("lvCam").lastChild.textContent="ابدأ بكاميرا الجوال";
     $("lvEmpty").querySelector("p").textContent="وجّه كاميرا الجوال إلى شاشة التلفزيون أو الكمبيوتر أو جهاز الألعاب، فيقرأ الموقع النص كلما تغيّر ويترجمه مباشرة. لألعاب الجوال نفسه انظر الطريقة في الأسفل."}
   if(ios||android){$("lvPhone").hidden=false;

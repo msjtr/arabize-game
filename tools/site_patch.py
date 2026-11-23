@@ -579,3 +579,89 @@ rep('$("lvPip").onclick=pipOpen;', r'''$("lvPip").onclick=pipOpen;
 })();''')
 open(P, "w", encoding="utf-8").write(s)
 print("phone patched", len(s))
+
+# ====================================================================== floating window first (one click), robust in the background
+s = open(P, encoding="utf-8").read()
+rep('''            <button class="btn" id="lvScreen"><svg class="ic sm"><use href="#i-monitor"/></svg>شارك الشاشة أو نافذة اللعبة</button>''',
+    '''            <button class="btn" id="lvGo"><svg class="ic sm"><use href="#i-cc"/></svg>ابدأ الترجمة فوق اللعبة</button>
+            <button class="btn ghost" id="lvScreen"><svg class="ic sm"><use href="#i-monitor"/></svg>شارك الشاشة فقط</button>''')
+rep('''      <p class="lvhint" id="lvHint" hidden>''', '''      <p class="lvhint lvsteps" id="lvSteps">«ابدأ الترجمة فوق اللعبة» يفتح نافذة صغيرة تبقى فوق كل البرامج. اضغط فيها «اختر نافذة اللعبة»، واختر اللعبة، ثم ضع النافذة الصغيرة فوق اللعبة. يعمل على Chrome وEdge في الكمبيوتر، والأفضل أن تكون اللعبة في وضع «نافذة» أو «بلا حواف».</p>
+      <p class="lvhint" id="lvHint" hidden>''')
+a = s.index('const PIP_CSS=`'); b = s.index('$("lvPip").onclick=pipOpen;')
+PIP = r'''const PIP_CSS=`*{box-sizing:border-box}html,body{margin:0;height:100%}body{display:flex;flex-direction:column;background:#05060f;color:#fff;font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;overflow:hidden}
+#bar{display:flex;align-items:center;gap:6px;padding:6px 8px;font-size:12px;background:rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.08)}
+#st{flex:1;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar button{font:inherit;font-weight:700;border:0;border-radius:8px;padding:6px 10px;cursor:pointer}
+#pick{background:linear-gradient(135deg,#f6dca0,#e7b964);color:#1a1204}#stop{background:rgba(255,255,255,.1);color:#fff}
+#p{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;line-height:1.6;text-align:center;padding:8px 16px;white-space:pre-wrap}
+#p .q{display:block;font-size:.62em}
+#v{position:fixed;left:6px;bottom:6px;width:96px;height:54px;object-fit:contain;opacity:.55;border-radius:6px;background:#000;pointer-events:none}`;
+function pipSync(){const w=LV.pip;if(!w||w.closed)return;const d=w.document;
+  d.getElementById("pick").hidden=!!LV.stream;d.getElementById("stop").hidden=!LV.stream;
+  const v=d.getElementById("v");if(LV.stream&&v.srcObject!==LV.stream){v.srcObject=LV.stream;v.play().catch(()=>{})}if(!LV.stream)v.srcObject=null;v.hidden=!LV.stream}
+async function pipDoc(){
+  if(LV.pip&&!LV.pip.closed){LV.pip.focus&&LV.pip.focus();return true}
+  if(!window.documentPictureInPicture)return false;
+  try{const w=await documentPictureInPicture.requestWindow({width:Math.round(Math.min(900,screen.availWidth*.55)),height:190});
+    LV.pip=w;const d=w.document;d.documentElement.dir="rtl";d.documentElement.lang="ar";
+    document.querySelectorAll('link[rel=stylesheet]').forEach(l=>{const n=d.createElement("link");n.rel="stylesheet";n.href=l.href;d.head.appendChild(n)});
+    const st=d.createElement("style");st.textContent=PIP_CSS;d.head.appendChild(st);
+    d.body.innerHTML='<div id="bar"><span id="st">جاهز</span><button id="pick">اختر نافذة اللعبة</button><button id="stop" hidden>إيقاف</button></div><div id="p"></div><video id="v" muted autoplay playsinline hidden></video>';
+    d.getElementById("pick").onclick=()=>liveStart("screen");     // a click here counts as the user's click for screen sharing
+    d.getElementById("stop").onclick=()=>liveStop();
+    w.addEventListener("pagehide",()=>{LV.pip=null});pipSync();pipUpdate();return true}
+  catch(e){LV.pipErr=(e&&e.name)||"Error";return false}}
+async function pipOpen(){
+  if(await pipDoc()){toast("ضع النافذة العائمة فوق اللعبة؛ تبقى ظاهرة فوق كل البرامج");return}
+  const v=document.createElement("video");
+  if(v.requestPictureInPicture&&document.pictureInPictureEnabled!==false&&HTMLCanvasElement.prototype.captureStream){
+    try{const cv=document.createElement("canvas");cv.width=1280;cv.height=220;LV.pipCanvas=cv;pipUpdate();
+      v.muted=true;v.srcObject=cv.captureStream(4);await v.play();await v.requestPictureInPicture();
+      LV.pipVideo=v;clearInterval(LV.pipT);LV.pipT=setInterval(pipUpdate,1000);
+      v.addEventListener("leavepictureinpicture",()=>{clearInterval(LV.pipT);LV.pipCanvas=null;LV.pipVideo=null});return}catch(e){LV.pipCanvas=null;LV.pipErr=(e&&e.name)||"Error"}
+  }
+  modal("تعذّر فتح النافذة العائمة",`المتصفح رفض فتحها${LV.pipErr?" ("+LV.pipErr+")":""}. افتح الموقع العام msjtr.github.io/arabize-game في Chrome أو Edge على الكمبيوتر (وليس من داخل تطبيق آخر)، ثم أعد المحاولة. أو استخدم برنامج الكمبيوتر الذي يعرض الترجمة فوق اللعبة مباشرة.`)}
+async function liveBegin(){
+  if(await pipDoc()){setStatus("في النافذة العائمة اضغط «اختر نافذة اللعبة»، ثم ضعها فوق اللعبة.","ok");toast("اضغط «اختر نافذة اللعبة» في النافذة العائمة");return}
+  await liveStart("screen");if(LV.stream)pipOpen()}
+function pipUpdate(){
+  const lines=LV.lines.length?LV.lines:[LV.stream?"بانتظار نص في اللعبة…":"اضغط «اختر نافذة اللعبة» لتبدأ"];
+  const quest=lines.filter(l=>/^المهمة\s*[:：]/.test(l)),main=lines.filter(l=>!/^المهمة\s*[:：]/.test(l)).slice(-3);
+  const col=S.subColor,bg=`rgba(${rgb(S.subBgC)},${Math.max(.8,S.subBgA/100)})`,font=`"${S.subFont}",sans-serif`;
+  if(LV.pip&&!LV.pip.closed){const d=LV.pip.document,p=d.getElementById("p");if(!p)return;d.body.style.background=bg;
+    p.style.fontFamily=font;p.style.color=col;p.style.fontSize=Math.max(18,Math.min(40,S.subSize))+"px";p.dir=dirOf(main.join(" "));p.textContent=main.join("\n");
+    if(quest.length){const q=d.createElement("span");q.className="q";q.style.color=S.accent;q.textContent=quest.join(" ");p.prepend(q)}}
+  const cv=LV.pipCanvas;if(cv){const x=cv.getContext("2d");x.fillStyle=bg;x.fillRect(0,0,cv.width,cv.height);
+    x.direction="rtl";x.textAlign="center";x.fillStyle=col;let size=40;x.font=`700 ${size}px ${font}`;
+    const wrap=[];for(const l of main){let cur="";for(const w of l.split(" ")){const tst=cur?cur+" "+w:w;if(x.measureText(tst).width>cv.width-60&&cur){wrap.push(cur);cur=w}else cur=tst}if(cur)wrap.push(cur)}
+    const show=wrap.slice(-3);const lh=size*1.35,y0=cv.height/2-(show.length-1)*lh/2;
+    x.textBaseline="middle";show.forEach((l,i)=>x.fillText(l,cv.width/2,y0+i*lh))}}
+'''
+s = s[:a] + PIP + s[b:]
+rep('$("lvPip").onclick=pipOpen;', '$("lvPip").onclick=pipOpen;$("lvGo").onclick=liveBegin;')
+# status chip mirrored in the floating window
+rep('function lvChip(txt,cls){const c=$("lvChip");c.className="chip "+(cls||"");c.innerHTML=cls==="live"?"<i></i><span></span>":"<span></span>";c.lastChild.textContent=txt}',
+    'function lvChip(txt,cls){const c=$("lvChip");c.className="chip "+(cls||"");c.innerHTML=cls==="live"?"<i></i><span></span>":"<span></span>";c.lastChild.textContent=txt;\n'
+    '  if(LV.pip&&!LV.pip.closed){const st=LV.pip.document.getElementById("st");if(st)st.textContent=txt}}')
+# keep reading while the page is in the background: a worker drives the loop (page timers get throttled),
+# and frames come from the floating window's own video when this tab is hidden
+rep('  clearInterval(LV.timer);LV.timer=setInterval(liveTick,kind==="cam"?800:600);',
+    '  clearInterval(LV.timer);if(LV.worker)LV.worker.terminate();LV.worker=null;\n'
+    '  try{LV.worker=new Worker(URL.createObjectURL(new Blob([`setInterval(()=>postMessage(0),${kind==="cam"?800:600})`],{type:"text/javascript"})));LV.worker.onmessage=liveTick}\n'
+    '  catch(e){LV.timer=setInterval(liveTick,kind==="cam"?800:600)}\n  pipSync();pipUpdate();')
+rep('  clearInterval(LV.timer);LV.timer=0;if(LV.ctl)LV.ctl.abort();',
+    '  clearInterval(LV.timer);LV.timer=0;if(LV.worker){LV.worker.terminate();LV.worker=null}if(LV.ctl)LV.ctl.abort();')
+rep('  if(!silent)setStatus("أُوقفت القراءة المباشرة.")}', '  LV.lines=[];pipSync();pipUpdate();if(!silent)setStatus("أُوقفت القراءة المباشرة.")}')
+rep('function liveFrame(){const v=$("lvVideo"),W=v.videoWidth,H=v.videoHeight;if(!W||!H)return null;',
+    'function liveFrame(){let v=$("lvVideo");if(document.hidden&&LV.pip&&!LV.pip.closed){const pv=LV.pip.document.getElementById("v");if(pv&&pv.videoWidth)v=pv}\n'
+    '  const W=v.videoWidth,H=v.videoHeight;if(!W||!H)return null;')
+# show the browser's reason when sharing fails, so a problem can be diagnosed from a screenshot
+rep('''    return modal("تعذّر بدء القراءة المباشرة",kind==="screen"?"هذه الصفحة لا تسمح بمشاركة الشاشة هنا. افتح الموقع العام msjtr.github.io/arabize-game على Chrome أو Edge في الكمبيوتر، أو استخدم برنامج الكمبيوتر.":"تعذّر فتح الكاميرا. اسمح للموقع باستخدامها من إعدادات المتصفح ثم أعد المحاولة.")}''',
+    '''    const why=e&&e.name?` (${e.name})`:"";
+    return modal("تعذّر بدء القراءة المباشرة",kind==="screen"?`المتصفح رفض مشاركة الشاشة${why}. افتح الموقع العام msjtr.github.io/arabize-game على Chrome أو Edge في الكمبيوتر. في ماك: اسمح للمتصفح بتسجيل الشاشة من إعدادات النظام ← الخصوصية والأمان. أو استخدم برنامج الكمبيوتر.`:`تعذّر فتح الكاميرا${why}. اسمح للموقع باستخدامها من إعدادات المتصفح ثم أعد المحاولة.`)}''')
+# phones / browsers without screen sharing or floating windows
+rep('  if(!canShare){$("lvScreen").hidden=true;', '  $("lvGo").hidden=!canShare||!window.documentPictureInPicture;$("lvSteps").hidden=$("lvGo").hidden;\n'
+    '  if(canShare&&!window.documentPictureInPicture){$("lvScreen").classList.remove("ghost");$("lvScreen").lastChild.textContent="شارك الشاشة أو نافذة اللعبة"}\n'
+    '  if(!canShare){$("lvScreen").hidden=true;')
+open(P, "w", encoding="utf-8").write(s)
+print("pip-first patched", len(s))
