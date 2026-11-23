@@ -63,9 +63,14 @@ def gpu_available() -> bool:
         return False
 
 
+GPU_ERROR = ""
+
+
 def use_gpu(eng) -> bool:
-    """Move RapidOCR's ONNX sessions to the graphics card (DirectML). Falls back to CPU silently."""
+    """Move RapidOCR's ONNX sessions to the graphics card (DirectML). Falls back to CPU; the reason is kept in GPU_ERROR."""
+    global GPU_ERROR
     if not gpu_available():
+        GPU_ERROR = "onnxruntime-directml غير مثبت"
         return False
     import onnxruntime as ort  # type: ignore
     moved = False
@@ -83,8 +88,11 @@ def use_gpu(eng) -> bool:
                 holder.session = ort.InferenceSession(sess._model_path, sess_options=opt,
                                                       providers=["DmlExecutionProvider", "CPUExecutionProvider"])
                 moved = moved or "DmlExecutionProvider" in holder.session.get_providers()
-            except Exception:
+            except Exception as e:
+                GPU_ERROR = str(e)[:300]
                 continue
+    if moved:
+        GPU_ERROR = ""
     return moved
 
 
