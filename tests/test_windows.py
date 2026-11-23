@@ -120,3 +120,17 @@ def test_keep_on_top_and_find_window():
     r = window_rect(int(w.winId()))
     assert r and r[2] >= 290 and r[3] >= 190
     w.close()
+
+
+def test_ocr_on_the_graphics_card():
+    from arabize.ocr import PERF_PRESETS, RapidOcr, gpu_available
+    from arabize.textproc import group_lines, similarity
+    from gameshots import dialogue_scene
+    if not gpu_available():
+        pytest.skip("onnxruntime-directml not installed")
+    o = RapidOcr(perf={**PERF_PRESETS["balanced"], "gpu": True})
+    assert RapidOcr.gpu_active
+    img, exp = dialogue_scene()
+    blocks = group_lines(o.read(img))
+    assert max(similarity(b.text, exp["dialogue"]) for b in blocks) > 0.8
+    RapidOcr(perf={**PERF_PRESETS["balanced"], "gpu": False})   # back to CPU for the other tests
