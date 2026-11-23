@@ -56,6 +56,25 @@ async def local_cdn(route):
     await route.fulfill(status=200, body=path.read_bytes(), content_type=ctype, headers={"access-control-allow-origin": "*"})
 
 
+FONT_DIR = ROOT / "arabize/assets/fonts"
+FONT_CSS = "".join(
+    f"@font-face{{font-family:'{fam}';font-weight:{w};src:url(https://fonts.gstatic.com/local/{f}) format('truetype')}}"
+    for fam, w, f in [("Alexandria", 700, "Alexandria-Bold.ttf"), ("Alexandria", 500, "Alexandria-Bold.ttf"),
+                      ("IBM Plex Sans Arabic", 400, "IBMPlexSansArabic-Regular.ttf"), ("IBM Plex Sans Arabic", 500, "IBMPlexSansArabic-Medium.ttf"),
+                      ("IBM Plex Sans Arabic", 700, "IBMPlexSansArabic-Bold.ttf"), ("Readex Pro", 700, "ReadexPro-Bold.ttf"),
+                      ("Readex Pro", 500, "ReadexPro-Regular.ttf"), ("Tajawal", 700, "Tajawal-Bold.ttf"), ("Cairo", 700, "Cairo-Bold.ttf"),
+                      ("Noto Naskh Arabic", 700, "NotoNaskhArabic-Bold.ttf")])
+
+
+async def local_fonts(route):
+    """Google Fonts stand-in: the same families, served from the app's bundled copies."""
+    url = route.request.url
+    if "fonts.googleapis.com" in url:
+        return await route.fulfill(status=200, body=FONT_CSS, content_type="text/css", headers={"access-control-allow-origin": "*"})
+    path = FONT_DIR / url.rsplit("/", 1)[-1]
+    await route.fulfill(status=200, body=path.read_bytes(), content_type="font/ttf", headers={"access-control-allow-origin": "*"})
+
+
 async def main():
     import PIL.Image
     img, _ = dialogue_scene()
@@ -71,7 +90,8 @@ async def main():
             await ctx.route("**/api.mymemory.translated.net/**", fake_mm)
             await ctx.route("**/cdn.jsdelivr.net/**", local_cdn)
             await ctx.route("**/tessdata.projectnaptha.com/**", local_cdn)
-            await ctx.route("**/fonts.googleapis.com/**", lambda r: r.fulfill(status=200, body="", content_type="text/css"))
+            await ctx.route("**/fonts.googleapis.com/**", local_fonts)
+            await ctx.route("**/fonts.gstatic.com/**", local_fonts)
             pg = await ctx.new_page()
             errs = []
             pg.on("pageerror", lambda e: errs.append(str(e)))
@@ -105,11 +125,43 @@ async def main():
             print(name, "ocr cards:", cards)
             print(name, "status:", await pg.text_content("#status"), "| boxes:", await pg.evaluate("document.querySelectorAll('.bx').length"))
             ok &= any("lighthouse" in c.lower() for c in cards) and any("dawn" in c.lower() for c in cards)
+            await pg.wait_for_timeout(600)
+            layer = await pg.evaluate("[document.getElementById('lyQuest').classList.contains('on'), document.getElementById('lyQuest').textContent, document.getElementById('pInfo').textContent]")
+            print(name, "quest layer:", layer)
+            if name == "desktop":       # wide screens: quest in its own layer
+                ok &= layer[0] and "lighthouse" in layer[1].lower() and layer[2] == "1 / 1"
+            else:                       # phones: no room for side layers, everything plays as subtitles
+                ok &= not layer[0] and layer[2] == "1 / 2"
+            await pg.evaluate("document.getElementById('cinema').scrollIntoView()")
+            await pg.wait_for_timeout(1500)
+            await (await pg.query_selector("#cinema")).screenshot(path=f"/tmp/site-{name}-cinema.png")
             await pg.screenshot(path=f"/tmp/site-{name}-shot.png")
             await pg.set_input_files("#fileImg", "/tmp/game_choices.png")
-            await pg.wait_for_function("document.querySelectorAll('.bk.choice li').length>0 || document.getElementById('status').textContent.includes('تمت')", timeout=120000)
+            await pg.wait_for_function("document.querySelectorAll('.bk.choice li').length>0", timeout=120000)
             await pg.wait_for_timeout(500)
             print(name, "choices:", await pg.evaluate("[...document.querySelectorAll('.bk.choice li .og')].map(x=>x.textContent)"))
+            # --- appearance: 3D icons, fonts, templates
+            fam = await pg.evaluate("document.fonts.check('700 20px \"Alexandria\"') && document.fonts.check('16px \"IBM Plex Sans Arabic\"')")
+            tiles = await pg.evaluate("document.querySelectorAll('.i3d svg rect').length")
+            print(name, "fonts loaded:", fam, "| 3D tile layers:", tiles)
+            ok &= fam and tiles > 20
+            await pg.evaluate("location.hash='#sc'")
+            await pg.wait_for_timeout(700)
+            n_tpl = await pg.evaluate("document.querySelectorAll('#tpls .tpl').length")
+            # Arabic words animated one by one must still read right-to-left
+            await pg.click("#subAnimC button[data-k=rise]")
+            await pg.wait_for_timeout(1500)
+            order = await pg.evaluate("(()=>{const w=[...document.querySelectorAll('#miniSub .w')];return w.length>1?w[0].getBoundingClientRect().right>w[w.length-1].getBoundingClientRect().right:null})()")
+            print(name, "arabic word order right-to-left:", order)
+            ok &= order is True
+            await pg.click("#tpls .tpl[data-id=tv]")
+            await pg.wait_for_timeout(900)
+            st = await pg.evaluate("[getComputedStyle(document.getElementById('miniSub')).fontFamily, document.getElementById('miniSub').dataset.bg, JSON.parse(localStorage.getItem('ag_set')).tpl]")
+            print(name, "templates:", n_tpl, "| after TV:", st)
+            ok &= n_tpl == 8 and "Readex Pro" in st[0] and st[1] == "bar" and st[2] == "tv"
+            await pg.screenshot(path=f"/tmp/site-{name}-look.png", full_page=True)
+            await pg.click("#tpls .tpl[data-id=dialogue]")
+            await pg.wait_for_timeout(400)
             print(name, "errors:", errs)
             ok &= not errs
             await ctx.close()
@@ -117,4 +169,5 @@ async def main():
     print("ALL OK" if ok else "FAILURES")
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

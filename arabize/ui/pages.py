@@ -6,18 +6,20 @@ import datetime as dt
 import os
 import sys
 
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QFont, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                               QFileDialog, QFontComboBox, QFormLayout, QGridLayout, QHBoxLayout, QHeaderView,
+                               QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView,
                                QInputDialog, QKeySequenceEdit, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMessageBox, QPushButton, QScrollArea, QStackedWidget, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
+from .. import styles
 from ..config import APP_NAME_AR, APP_NAME_EN, APP_VERSION, DEFAULT_HOTKEYS, ENGINE_INFO, LANGUAGES, data_dir
 from ..screens import screen_label
 from . import icons, theme
-from .widgets import (ColorPick, MonitorMap, PowerButton, SubtitlePreview, ValueSlider, card, hint, row, title)
+from .widgets import (Chips, ColorPick, FontPicker, MonitorMap, PowerButton, SubtitlePreview, TemplateGallery, ValueSlider,
+                      card, hint, row, title)
 
 
 class Page(QScrollArea):
@@ -116,6 +118,16 @@ class HomePage(Page):
             stats.addWidget(c)
         self.v.addLayout(stats)
 
+        quick, ql = card()
+        qh = QHBoxLayout(); qh.addWidget(title("شكل الترجمة بضغطة", "template")); qh.addStretch(1)
+        more = QPushButton("كل القوالب والطبقات والتأثيرات"); more.setObjectName("Chip")
+        more.clicked.connect(lambda: ctrl.window and ctrl.window.go_name("look")); qh.addWidget(more)
+        ql.addLayout(qh)
+        self.quick_tpl = Chips([(k, t["name"]) for k, t in styles.TEMPLATES.items()], wrap=8)
+        self.quick_tpl.changed.connect(lambda k: ctrl.apply_template(k) and ctrl.toast(f"طُبّق قالب «{styles.TEMPLATES[k]['name']}»"))
+        ql.addWidget(self.quick_tpl)
+        self.v.addWidget(quick)
+
         last, ll = card()
         hdr = QHBoxLayout(); hdr.addWidget(title("آخر ترجمة", "spark")); hdr.addStretch(1)
         self.edit_btn = QPushButton(icons.icon("edit", theme.GOLD2), "  تعديل الترجمة"); self.edit_btn.setEnabled(False)
@@ -145,6 +157,7 @@ class HomePage(Page):
         p = self.prof
         where = "الشاشة كاملة" if p["capture"]["full"] else "منطقة محددة"
         self.game_chip.setText(f"إعدادات: {p['name']}   •   مصدر النص: الشاشة {p['capture']['monitor']} ({where})")
+        self.quick_tpl.set(p["display"]["screen"].get("template", ""))
 
     def on_status(self, code, msg):
         names = {"running": "الترجمة تعمل", "reading": "يقرأ النص…", "translating": "يترجم…", "paused": "متوقف مؤقتاً",
@@ -257,16 +270,16 @@ class ScreensPage(Page):
 
 # ======================================================================= look
 class LookPage(Page):
-    title_text = "المظهر"
+    title_text = "المظهر والقوالب"
 
     def __init__(self, ctrl):
         super().__init__(ctrl)
         seg = QHBoxLayout()
-        self.t_screen = QPushButton(icons.icon("monitor", theme.MIST, theme.GOLD2), "  إعدادات وضع الشاشة")
-        self.t_vr = QPushButton(icons.icon("vr", theme.MIST, theme.GOLD2), "  إعدادات الواقع الافتراضي")
+        self.t_screen = QPushButton(icons.tile_icon("monitor", "blue", 26), "  وضع الشاشة والتلفزيون")
+        self.t_vr = QPushButton(icons.tile_icon("vr", "violet", 26), "  وضع الواقع الافتراضي")
         grp = QButtonGroup(self)
         for b in (self.t_screen, self.t_vr):
-            b.setObjectName("Seg"); b.setCheckable(True); grp.addButton(b); seg.addWidget(b)
+            b.setObjectName("Seg"); b.setCheckable(True); b.setIconSize(QSize(26, 26)); grp.addButton(b); seg.addWidget(b)
         self.v.addLayout(seg)
         self.stack = QStackedWidget()
         self.v.addWidget(self.stack)
@@ -274,61 +287,134 @@ class LookPage(Page):
         self.t_vr.clicked.connect(lambda: self.stack.setCurrentIndex(1))
         self.t_screen.setChecked(True)
 
-        # ---- screen
+        # ================= screen
         sw = QWidget(); sv = QVBoxLayout(sw); sv.setContentsMargins(0, 0, 0, 0); sv.setSpacing(14)
-        self.prev = SubtitlePreview(230); sv.addWidget(self.prev)
-        grid = QHBoxLayout(); grid.setSpacing(14)
-        c1, l1 = card(); l1.addWidget(title("الخط والألوان", "palette"))
-        self.font = QFontComboBox(); self.font.setMaximumWidth(240)
-        self.font.currentFontChanged.connect(lambda f: self._s("font_family", f.family()))
+        self.prev = SubtitlePreview(260); sv.addWidget(self.prev)
+        pr = QHBoxLayout()
+        b_play = QPushButton(icons.icon("play", theme.GOLD2), "  شغّل التأثير في المعاينة"); b_play.clicked.connect(self.prev.play)
+        b_live = QPushButton(icons.icon("monitor", theme.GOLD2), "  اعرضه فوق اللعبة الآن"); b_live.clicked.connect(ctrl.preview_effect)
+        b_live.setToolTip("يعرض ترجمة تجريبية بهذا الشكل على شاشة اللعبة لبضع ثوانٍ")
+        pr.addWidget(b_play); pr.addWidget(b_live); pr.addStretch(1)
+        sv.addLayout(pr)
+
+        # ---- templates
+        ct, lt = card(gold=True); lt.addWidget(title("القوالب الجاهزة", "template"))
+        lt.addWidget(hint("اختر قالباً بضغطة واحدة: يضبط الخط والألوان والخلفية والتأثيرات معاً. بعدها عدّل ما تريد، واحفظه قالباً خاصاً بك."))
+        self.gallery = TemplateGallery(3)
+        self.gallery.applied.connect(self._apply_tpl); self.gallery.deleted.connect(self._del_tpl)
+        lt.addWidget(self.gallery)
+        tb = QHBoxLayout()
+        b_save = QPushButton(icons.icon("plus", theme.GOLD2), "  احفظ الشكل الحالي كقالب"); b_save.clicked.connect(self._save_tpl)
+        b_imp = QPushButton(icons.icon("download", theme.GOLD2), "  استيراد قوالب"); b_imp.clicked.connect(self._import_tpl)
+        b_exp = QPushButton("تصدير قوالبي"); b_exp.clicked.connect(self._export_tpl)
+        tb.addWidget(b_save); tb.addWidget(b_imp); tb.addWidget(b_exp); tb.addStretch(1)
+        lt.addLayout(tb)
+        sv.addWidget(ct)
+
+        # ---- font
+        cf, lf = card(); lf.addWidget(title("الخط", "type"))
+        lf.addWidget(hint("خطوط عربية مدمجة في البرنامج، فتظهر الحروف سليمة على أي جهاز."))
+        self.fontpick = FontPicker(3); self.fontpick.changed.connect(lambda f: self._s("font_family", f))
+        lf.addWidget(self.fontpick)
         self.size = ValueSlider(14, 80, 1, " px", 26); self.size.valueChanged.connect(lambda v: self._s("font_size", int(v)))
         self.bold = QCheckBox(); self.bold.toggled.connect(lambda b: self._s("bold", b))
-        self.color = ColorPick(["#FFFFFF", "#FFE14D", "#F6DCA0", "#9FE8FF", "#B7FFB0"], "#FFFFFF")
+        lf.addWidget(row("حجم الخط", self.size, "للتلفزيون البعيد اختر 36 فأكثر")); lf.addWidget(row("خط عريض", self.bold))
+        sv.addWidget(cf)
+
+        # ---- colours & box
+        cc, lc = card(); lc.addWidget(title("الألوان والخلفية", "palette"))
+        self.color = ColorPick(["#FFFFFF", "#FFE14D", "#F6DCA0", "#9FE8FF", "#B7FFB0", "#121212"], "#FFFFFF")
         self.color.changed.connect(lambda c: self._s("color", c))
-        self.bg = ColorPick(["#05080F", "#000000", "#1A1204", "#0B2A3A"], "#05080F")
+        self.accent = ColorPick(["#E7B964", "#5CE1E6", "#FF4FD8", "#7CF29A", "#FF8466", "#C9D0EA"], "#E7B964")
+        self.accent.changed.connect(lambda c: self._s("accent", c))
+        self.bg = ColorPick(["#0A0E1F", "#000000", "#1B1209", "#03121A", "#FFFFFF"], "#0A0E1F")
         self.bg.changed.connect(lambda c: self._s("bg", c))
-        self.opa = ValueSlider(0, 100, 5, "%", 72); self.opa.valueChanged.connect(lambda v: self._s("bg_opacity", int(v)))
-        for lab, w in (("نوع الخط", self.font), ("حجم الخط", self.size), ("خط عريض", self.bold), ("لون الكلام", self.color),
-                       ("لون الخلفية", self.bg), ("شفافية الخلفية", self.opa)):
-            l1.addWidget(row(lab, w))
-        grid.addWidget(c1, 1)
-        c2, l2 = card(); l2.addWidget(title("المكان والحجم", "move"))
+        self.opa = ValueSlider(0, 100, 5, "%", 80); self.opa.valueChanged.connect(lambda v: self._s("bg_opacity", int(v)))
+        self.box = Chips(styles.BOXES); self.box.changed.connect(lambda k: self._s("box", k))
+        self.tfx = Chips(styles.TEXT_FX); self.tfx.changed.connect(lambda k: self._s("text_fx", k))
+        lc.addWidget(row("لون الكلام", self.color)); lc.addWidget(row("لون الاسم والحافة", self.accent, "اسم المتحدث وعنوان المهمة"))
+        lc.addWidget(row("لون الخلفية", self.bg)); lc.addWidget(row("شفافية الخلفية", self.opa))
+        lc.addWidget(QLabel("شكل الخلفية")); lc.addWidget(self.box)
+        lc.addWidget(QLabel("تأثير الحروف")); lc.addWidget(self.tfx)
+        self.radius = ValueSlider(0, 40, 1, " px", 16); self.radius.valueChanged.connect(lambda v: self._s("radius", int(v)))
+        self.align = Chips([("center", "في الوسط"), ("start", "من جهة البداية")]); self.align.changed.connect(lambda k: self._s("align", k))
+        lc.addWidget(self.advanced(row("استدارة الزوايا", self.radius)))
+        lc.addWidget(self.advanced(row("محاذاة الكلام", self.align)))
+        sv.addWidget(cc)
+
+        # ---- effects
+        ce, le = card(); le.addWidget(title("تأثيرات الظهور والاختفاء", "wand"))
+        self.fx_in = Chips(styles.FX_IN, wrap=3); self.fx_in.changed.connect(lambda k: self._s("fx_in", k, play=True))
+        self.fx_out = Chips(styles.FX_OUT); self.fx_out.changed.connect(lambda k: self._s("fx_out", k))
+        self.fx_ms = ValueSlider(0, 1200, 20, " ms", 280); self.fx_ms.valueChanged.connect(lambda v: self._s("fx_ms", int(v)))
+        le.addWidget(QLabel("عند ظهور ترجمة جديدة")); le.addWidget(self.fx_in)
+        le.addWidget(QLabel("عند اختفاء النص من اللعبة")); le.addWidget(self.fx_out)
+        le.addWidget(row("سرعة التأثير", self.fx_ms, "الأقل أسرع؛ 0 يلغي التأثير"))
+        sv.addWidget(ce)
+
+        # ---- layers
+        cl, ll = card(); ll.addWidget(title("الطبقات: الحوار والمهمة والخيارات", "layers"))
+        ll.addWidget(hint("يفرز البرنامج نصوص اللعبة تلقائياً: كلام الشخصيات في طبقة، والمهمة الحالية في طبقة، وخيارات الرد في طبقة. "
+                          "لكل طبقة مكانها وحجمها، ويمكن إيقافها فيذهب نصها إلى صندوق الحوار."))
+        self.layers_on = QCheckBox(); self.layers_on.toggled.connect(lambda b: self._s("layers_on", b))
+        ll.addWidget(row("فصل النصوص في طبقات", self.layers_on, "عند الإيقاف تظهر كل الترجمة في صندوق واحد"))
+        # dialogue = the main subtitle position
         self.anchor = QComboBox()
-        for k, t in (("bottom", "أسفل الشاشة"), ("center", "وسط الشاشة"), ("top", "أعلى الشاشة")):
+        for k, t in styles.ANCHORS:
             self.anchor.addItem(t, k)
         self.anchor.currentIndexChanged.connect(lambda _: (self._s("anchor", self.anchor.currentData()), self._s("custom_pos", None)))
         self.offset = ValueSlider(0, 600, 10, " px", 80); self.offset.valueChanged.connect(lambda v: self._s("offset", int(v)))
         self.width = ValueSlider(30, 100, 5, "%", 70); self.width.valueChanged.connect(lambda v: self._s("width_pct", int(v)))
+        dl = self._layer_head("dialogue", "chat", "gold")
+        b_move = QPushButton(icons.icon("move", theme.GOLD2), "  حرّك بالماوس"); b_move.clicked.connect(lambda: ctrl.edit_overlay_position("dialogue"))
+        dl.addWidget(b_move)
+        ll.addLayout(dl)
+        ll.addWidget(row("المكان", self.anchor)); ll.addWidget(row("البعد عن الحافة", self.offset)); ll.addWidget(row("العرض", self.width))
+        self.layer_w: dict[str, dict] = {}
+        for k, ic, hue in (("quest", "flag", "coral"), ("choices", "list", "cyan"), ("other", "info", "slate")):
+            box = QFrame(); box.setObjectName("LayerBox"); bl = QVBoxLayout(box); bl.setContentsMargins(12, 10, 12, 10); bl.setSpacing(6)
+            head = self._layer_head(k, ic, hue)
+            on = QCheckBox(); on.toggled.connect(lambda b, k=k: self._l(k, "on", b)); head.addWidget(on)
+            mv = QPushButton(icons.icon("move", theme.GOLD2), "  حرّك"); mv.clicked.connect(lambda _=False, k=k: ctrl.edit_overlay_position(k))
+            head.addWidget(mv)
+            bl.addLayout(head)
+            anc = QComboBox()
+            for a, t in styles.ANCHORS:
+                anc.addItem(t, a)
+            anc.currentIndexChanged.connect(lambda _, k=k, anc=anc: (self._l(k, "anchor", anc.currentData()), self._l(k, "custom_pos", None)))
+            sc = ValueSlider(50, 150, 5, "%", 80); sc.valueChanged.connect(lambda v, k=k: self._l(k, "scale", round(v / 100, 2)))
+            wd = ValueSlider(15, 100, 5, "%", 30); wd.valueChanged.connect(lambda v, k=k: self._l(k, "width_pct", int(v)))
+            off = ValueSlider(0, 400, 10, " px", 40); off.valueChanged.connect(lambda v, k=k: self._l(k, "offset", int(v)))
+            bl.addWidget(row("المكان", anc)); bl.addWidget(row("حجم الخط نسبةً للحوار", sc))
+            bl.addWidget(self.advanced(row("العرض", wd))); bl.addWidget(self.advanced(row("البعد عن الحافة", off)))
+            ll.addWidget(box)
+            self.layer_w[k] = {"box": box, "on": on, "anchor": anc, "scale": sc, "width_pct": wd, "offset": off}
         self.orig = QCheckBox(); self.orig.toggled.connect(lambda b: self._s("show_original", b))
         self.lines = ValueSlider(1, 8, 1, "", 4); self.lines.valueChanged.connect(lambda v: self._s("max_lines", int(v)))
-        self.fade = ValueSlider(0, 800, 20, " ms", 220); self.fade.valueChanged.connect(lambda v: self._s("fade_ms", int(v)))
-        l2.addWidget(row("موضع الترجمة", self.anchor)); l2.addWidget(row("البعد عن الحافة", self.offset))
-        l2.addWidget(row("عرض الترجمة", self.width)); l2.addWidget(row("إظهار النص الأصلي تحتها", self.orig))
-        l2.addWidget(self.advanced(row("أقصى عدد فقرات", self.lines)))
-        l2.addWidget(self.advanced(row("مدة ظهور النص بنعومة", self.fade)))
-        mv = QHBoxLayout()
-        b_move = QPushButton(icons.icon("move", theme.GOLD2), "  حرّك الترجمة بالماوس"); b_move.clicked.connect(ctrl.edit_overlay_position)
-        b_reset = QPushButton("إرجاع للموضع التلقائي"); b_reset.clicked.connect(lambda: self._s("custom_pos", None))
-        mv.addWidget(b_move); mv.addWidget(b_reset); l2.addLayout(mv)
-        grid.addWidget(c2, 1)
-        sv.addLayout(grid)
+        ll.addWidget(row("إظهار النص الأصلي تحت الترجمة", self.orig))
+        ll.addWidget(self.advanced(row("أقصى عدد فقرات في الطبقة", self.lines)))
+        sv.addWidget(cl)
         self.stack.addWidget(sw)
 
-        # ---- vr
+        # ================= vr
         vw = QWidget(); vv = QVBoxLayout(vw); vv.setContentsMargins(0, 0, 0, 0); vv.setSpacing(14)
         self.vprev = SubtitlePreview(230); vv.addWidget(self.vprev)
         c3, l3 = card(); l3.addWidget(title("لوحة الترجمة داخل النظارة", "vr"))
         l3.addWidget(hint("يعمل مع أي نظارة تعمل عبر SteamVR: Valve Index وHTC Vive وMeta Quest (عبر Link أو Air Link أو Virtual Desktop) وPico وWindows MR. "
-                          "تتبع اللوحة رأسك على المسافة والارتفاع المحددين."))
+                          "تتبع اللوحة رأسك على المسافة والارتفاع المحددين. القالب المختار يحدد خط اللوحة وألوانها."))
         self.vdist = ValueSlider(0.5, 4.0, 0.1, " م", 1.4, 1); self.vdist.valueChanged.connect(lambda v: self._v("distance_m", v))
         self.vwid = ValueSlider(0.4, 3.0, 0.1, " م", 1.1, 1); self.vwid.valueChanged.connect(lambda v: self._v("width_m", v))
         self.vh = ValueSlider(-1.0, 1.0, 0.05, " م", -0.35, 2); self.vh.valueChanged.connect(lambda v: self._v("height_m", v))
         self.vsize = ValueSlider(20, 90, 2, " px", 44); self.vsize.valueChanged.connect(lambda v: self._v("font_size", int(v)))
+        self.vfont = FontPicker(3); self.vfont.changed.connect(lambda f: self._v("font_family", f))
         self.vcolor = ColorPick(["#FFFFFF", "#FFE14D", "#F6DCA0", "#9FE8FF"], "#FFFFFF"); self.vcolor.changed.connect(lambda c: self._v("color", c))
         self.vopa = ValueSlider(0, 100, 5, "%", 80); self.vopa.valueChanged.connect(lambda v: self._v("bg_opacity", int(v)))
         self.vorig = QCheckBox(); self.vorig.toggled.connect(lambda b: self._v("show_original", b))
         for lab, w in (("المسافة أمام العين", self.vdist), ("عرض اللوحة", self.vwid), ("الارتفاع (سالب = أسفل النظر)", self.vh),
-                       ("حجم الخط", self.vsize), ("لون الكلام", self.vcolor), ("شفافية الخلفية", self.vopa), ("إظهار النص الأصلي", self.vorig)):
+                       ("حجم الخط", self.vsize)):
+            l3.addWidget(row(lab, w))
+        l3.addWidget(QLabel("خط اللوحة")); l3.addWidget(self.vfont)
+        for lab, w in (("لون الكلام", self.vcolor), ("شفافية الخلفية", self.vopa), ("إظهار النص الأصلي", self.vorig)):
             l3.addWidget(row(lab, w))
         b_vr = QPushButton(icons.icon("vr", theme.GOLD2), "  اختبر اللوحة في النظارة الآن"); b_vr.clicked.connect(ctrl.test_vr)
         l3.addWidget(b_vr)
@@ -338,28 +424,104 @@ class LookPage(Page):
         ctrl.profile_changed.connect(self.refresh)
         self.refresh()
 
-    def _s(self, key, val):
-        self.save(f"display.screen.{key}", val)
+    def _layer_head(self, k: str, ic: str, hue: str) -> QHBoxLayout:
+        h = QHBoxLayout(); h.setSpacing(10)
+        t = QLabel(); t.setPixmap(icons.tile(ic, hue, 30)); h.addWidget(t)
+        _, name, desc = next(x for x in styles.LAYERS if x[0] == k)
+        lab = QLabel(f"<b>طبقة {name}</b><br><span style='color:{theme.MUTED}'>{desc}</span>")
+        h.addWidget(lab, 1)
+        return h
+
+    # ---------- saving ----------
+    def _s(self, key, val, play: bool = False):
+        self.ctrl.settings.update_profile(f"display.screen.{key}", val)
+        if key in styles.LOOK_KEYS and self.prof["display"]["screen"].get("template") != "custom":
+            self.ctrl.settings.update_profile("display.screen.template", "custom")
+            self.gallery.set_templates(self.ctrl.templates(), "custom")
+        self.ctrl.apply_display()
+        self.prev.set_style(self.prof["display"]["screen"], play=play)
+
+    def _l(self, layer, key, val):
+        self.ctrl.settings.update_profile(f"display.screen.layers.{layer}.{key}", val)
+        self.ctrl.apply_display()
         self.prev.set_style(self.prof["display"]["screen"])
+        if key == "on":
+            self._layer_enable()
 
     def _v(self, key, val):
         self.save(f"display.vr.{key}", val)
         self.vprev.set_style(self.prof["display"]["vr"], vr=True)
 
+    # ---------- templates ----------
+    def _apply_tpl(self, tid):
+        if self.ctrl.apply_template(tid):
+            self.ctrl.toast(f"طُبّق قالب «{self.ctrl.templates()[tid]['name']}»")
+            self.prev.play()
+
+    def _save_tpl(self):
+        name, ok = QInputDialog.getText(self, "حفظ قالب", "اسم القالب:")
+        if ok and name.strip():
+            self.ctrl.save_template(name)
+            self.ctrl.toast(f"حُفظ القالب «{name.strip()}»")
+
+    def _del_tpl(self, tid):
+        t = self.ctrl.templates().get(tid)
+        if t and QMessageBox.question(self, "حذف قالب", f"حذف القالب «{t['name']}»؟") == QMessageBox.Yes:
+            self.ctrl.delete_template(tid)
+
+    def _import_tpl(self):
+        path, _ = QFileDialog.getOpenFileName(self, "استيراد قوالب", "", "قوالب عرب لعبتك (*.json)")
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                n = self.ctrl.import_templates(f.read())
+        except (OSError, ValueError) as e:
+            self.ctrl.toast(f"تعذّر قراءة الملف: {e}", err=True); return
+        self.ctrl.toast(f"استُورد {n} قالب" if n else "لم يُعثر على قوالب صالحة في الملف", err=not n)
+
+    def _export_tpl(self):
+        if not self.ctrl.settings.get("templates"):
+            self.ctrl.toast("لا توجد قوالب خاصة بعد — احفظ شكلاً أولاً", err=True); return
+        path, _ = QFileDialog.getSaveFileName(self, "تصدير قوالبي", "arabize-templates.json", "JSON (*.json)")
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(self.ctrl.export_templates())
+            self.ctrl.toast("صُدّرت القوالب — شاركها مع أصدقائك")
+
+    # ---------- refresh ----------
+    def _layer_enable(self):
+        s = self.prof["display"]["screen"]
+        for k, w in self.layer_w.items():
+            on = s.get("layers_on", True) and s.get("layers", {}).get(k, {}).get("on", True)
+            for key in ("anchor", "scale", "width_pct", "offset"):
+                w[key].setEnabled(bool(on))
+            w["on"].setEnabled(bool(s.get("layers_on", True)))
+
     def refresh(self):
         s, v = self.prof["display"]["screen"], self.prof["display"]["vr"]
-        widgets = [self.font, self.anchor, self.bold, self.orig, self.vorig]
+        widgets = [self.anchor, self.bold, self.orig, self.vorig, self.layers_on] + [w[k] for w in self.layer_w.values() for k in ("on", "anchor")]
         for w in widgets:
             w.blockSignals(True)
-        self.font.setCurrentFont(QFont(s["font_family"] or "Noto Sans Arabic"))
+        self.gallery.set_templates(self.ctrl.templates(), s.get("template", "custom"))
+        self.fontpick.set(s["font_family"]); self.vfont.set(v.get("font_family"))
         self.size.setValue(s["font_size"]); self.bold.setChecked(s["bold"]); self.color.set(s["color"]); self.bg.set(s["bg"])
-        self.opa.setValue(s["bg_opacity"]); self.anchor.setCurrentIndex(max(0, self.anchor.findData(s["anchor"])))
+        self.accent.set(s.get("accent", "#E7B964"))
+        self.opa.setValue(s["bg_opacity"]); self.box.set(s.get("box", "card")); self.tfx.set(s.get("text_fx", "shadow"))
+        self.radius.setValue(s.get("radius", 16)); self.align.set(s.get("align", "center"))
+        self.fx_in.set(s.get("fx_in", "fade")); self.fx_out.set(s.get("fx_out", "fade")); self.fx_ms.setValue(s.get("fx_ms", 260))
+        self.anchor.setCurrentIndex(max(0, self.anchor.findData(s["anchor"])))
         self.offset.setValue(s["offset"]); self.width.setValue(s["width_pct"]); self.orig.setChecked(s["show_original"])
-        self.lines.setValue(s["max_lines"]); self.fade.setValue(s["fade_ms"])
+        self.lines.setValue(s["max_lines"]); self.layers_on.setChecked(s.get("layers_on", True))
+        for k, w in self.layer_w.items():
+            cfg = {**styles.DEFAULT_LAYERS[k], **s.get("layers", {}).get(k, {})}
+            w["on"].setChecked(cfg["on"]); w["anchor"].setCurrentIndex(max(0, w["anchor"].findData(cfg["anchor"])))
+            w["scale"].setValue(cfg["scale"] * 100); w["width_pct"].setValue(cfg["width_pct"]); w["offset"].setValue(cfg["offset"])
         self.vdist.setValue(v["distance_m"]); self.vwid.setValue(v["width_m"]); self.vh.setValue(v["height_m"])
         self.vsize.setValue(v["font_size"]); self.vcolor.set(v["color"]); self.vopa.setValue(v["bg_opacity"]); self.vorig.setChecked(v["show_original"])
         for w in widgets:
             w.blockSignals(False)
+        self._layer_enable()
         self.prev.set_style(s); self.vprev.set_style(v, vr=True)
         if self.prof["display"]["mode"] == "vr":
             self.t_vr.setChecked(True); self.stack.setCurrentIndex(1)

@@ -100,3 +100,17 @@ def env(tmp_path, fake_server):
     m = Manager(s, st, sleep=lambda x: None)
     m.overrides_endpoint = {e: f"{fake_server}/{e}" for e in ("google", "mymemory", "claude", "deepl")}
     return s, st, m
+
+
+@pytest.fixture
+def env_ctrl(tmp_path):
+    """A real controller on throw-away settings (no live translation started)."""
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from arabize.app import Controller
+    from arabize.cache import Store
+    from arabize.config import Settings
+    c = Controller(Settings(tmp_path / "s.json"), Store(tmp_path / "m.sqlite3"))
+    yield c
+    c.game_timer.stop()
+    c.overlay.clear(animate=False)

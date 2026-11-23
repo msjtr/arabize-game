@@ -5,11 +5,11 @@ import math
 
 from PySide6.QtCore import QEasingCurve, QPointF, QRectF, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QFont, QLinearGradient, QPainter, QPainterPath, QPen,
-                           QRadialGradient)
-from PySide6.QtWidgets import (QColorDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider,
+                           QPixmap, QRadialGradient)
+from PySide6.QtWidgets import (QColorDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider,
                                QVBoxLayout, QWidget)
 
-from .. import render
+from .. import render, styles
 from . import icons, theme
 
 
@@ -22,11 +22,21 @@ def card(gold: bool = False) -> tuple[QFrame, QVBoxLayout]:
     return f, lay
 
 
-def title(text: str, icon_name: str | None = None) -> QWidget:
+TITLE_HUES = {"palette": "rose", "move": "blue", "vr": "violet", "monitor": "blue", "lang": "cyan", "games": "violet",
+              "hist": "emerald", "keyboard": "slate", "help": "coral", "home": "gold", "layers": "emerald", "wand": "coral",
+              "template": "gold", "type": "blue", "scan": "cyan", "cpu": "slate", "zap": "gold", "power": "gold"}
+
+
+def title(text: str, icon_name: str | None = None, hue: str | None = None) -> QWidget:
     w = QWidget()
-    h = QHBoxLayout(w); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(8)
+    h = QHBoxLayout(w); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(10)
     if icon_name:
-        ic = QLabel(); ic.setPixmap(icons.pixmap(icon_name, theme.GOLD, 18)); h.addWidget(ic)
+        ic = QLabel()
+        if icon_name in icons.icons3d.GLYPHS:
+            ic.setPixmap(icons.tile(icon_name, hue or TITLE_HUES.get(icon_name, "gold"), 30))
+        else:
+            ic.setPixmap(icons.pixmap(icon_name, theme.GOLD, 18))
+        h.addWidget(ic)
     t = QLabel(text); t.setObjectName("CardTitle"); h.addWidget(t)
     h.addStretch(1)
     return w
@@ -203,10 +213,9 @@ def paint_game_scene(p: QPainter, rect: QRectF, t: float = 0.0, seed: int = 0) -
 
 
 class SubtitlePreview(QWidget):
-    """Live preview of the subtitle look over a game-like scene."""
+    """Live preview over a game-like scene: every layer in its place, playing the template's entrance effect."""
 
-    SAMPLE = [{"label": "Captain Mara", "label_tr": "القائدة مارا", "src": "We leave at dawn. Bring your sword.",
-               "tr": "سننطلق عند الفجر. أحضر سيفك."}]
+    SAMPLE = styles.SAMPLE_ITEMS
 
     def __init__(self, height: int = 220):
         super().__init__()
@@ -215,10 +224,29 @@ class SubtitlePreview(QWidget):
         self.style: dict = {}
         self.items = list(self.SAMPLE)
         self.vr = False
+        self._t = 1.0
+        self._anim = QVariantAnimation(self, startValue=0.0, endValue=1.0)
+        self._anim.valueChanged.connect(self._tick)
 
-    def set_style(self, style: dict, vr: bool = False):
+    def set_style(self, style: dict, vr: bool = False, play: bool = False):
+        changed_fx = any(self.style.get(k) != style.get(k) for k in ("fx_in", "template"))
         self.style, self.vr = dict(style), vr
+        if play or changed_fx:
+            self.play()
         self.update()
+
+    def play(self):
+        fx, ms = self.style.get("fx_in", "fade"), int(self.style.get("fx_ms", 260))
+        if fx == "none" or ms <= 0:
+            self._t = 1.0; self.update(); return
+        if fx == "type":
+            ms = max(ms, 900)
+        self._anim.stop(); self._anim.setDuration(ms)
+        self._anim.setEasingCurve(QEasingCurve.Linear if fx == "type" else QEasingCurve.OutCubic)
+        self._t = 0.0; self._anim.start()
+
+    def _tick(self, v):
+        self._t = float(v); self.update()
 
     def paintEvent(self, _):
         p = QPainter(self); p.setRenderHint(QPainter.Antialiasing)
@@ -231,26 +259,188 @@ class SubtitlePreview(QWidget):
                 rg = QRadialGradient(eye.center(), eye.width() * 0.6)
                 rg.setColorAt(0, QColor("#2A2156")); rg.setColorAt(1, QColor("#05060F"))
                 p.fillRect(eye, rg)
-                self._sub(p, eye, scale=0.55, vr=True)
+                self._vr_panel(p, eye)
             p.setPen(QPen(QColor("#000"), 3)); p.drawLine(QPointF(r.center().x(), r.top()), QPointF(r.center().x(), r.bottom()))
         else:
             paint_game_scene(p, r)
-            self._sub(p, r, scale=0.5)
+            paint_layers(p, r, self.items, self.style, self._t)
         p.end()
 
-    def _sub(self, p, area: QRectF, scale: float, vr: bool = False):
+    def _vr_panel(self, p, area: QRectF):
         st = dict(self.style)
-        st["font_size"] = max(10, st.get("font_size", 26) * scale)
-        st.setdefault("font_family", "Noto Sans Arabic")
-        width = area.width() * (0.86 if vr else max(0.3, min(1.0, st.get("width_pct", 70) / 100)))
-        ops, h = render.layout(self.items, st, width)
-        x = area.x() + (area.width() - width) / 2
-        anchor = st.get("anchor", "bottom") if not vr else "center"
-        off = st.get("offset", 80) * scale * 0.5
-        y = area.y() + (off if anchor == "top" else (area.height() - h) / 2 if anchor == "center" else area.height() - h - off)
-        if vr:
-            y += st.get("height_m", -0.35) * -area.height() * 0.6
-        render.paint(p, QRectF(x, y, width, h), self.items, st, 1.0, ops)
+        st["font_size"] = max(9, st.get("font_size", 44) * 0.3)
+        width = area.width() * 0.86
+        items = [i for i in self.items if i.get("kind") != "choices"][:2]
+        ops, h = render.layout(items, st, width)
+        y = area.center().y() - h / 2 + st.get("height_m", -0.35) * -area.height() * 0.6
+        e = overlay_fx(st, self._t)
+        render.paint(p, QRectF(area.x() + (area.width() - width) / 2, y + e["dy"], width, h), items, st, e["alpha"], ops,
+                     e["reveal"], e["glow"])
+
+
+def overlay_fx(style: dict, t: float) -> dict:
+    from ..overlay import effect_state
+    return effect_state(style, t)
+
+
+def paint_layers(p: QPainter, area: QRectF, items: list[dict], style: dict, t: float = 1.0, screen_w: float = 1600,
+                 min_font_k: float = 0.36) -> None:
+    """Draw items the way the real overlay layers would place them on a screen screen_w pixels wide, scaled into area."""
+    from ..overlay import anchor_xy
+    k = area.width() / screen_w
+    font_k = max(k, min_font_k)
+    layers_cfg = style.get("layers") or {}
+    split = style.get("layers_on", True)
+    groups: dict[str, list] = {}
+    for it in items:
+        kind = it.get("kind", "dialogue") if split else "dialogue"
+        cfg = {**styles.DEFAULT_LAYERS.get(kind, {}), **layers_cfg.get(kind, {})}
+        if kind not in styles.LAYER_IDS or (kind != "dialogue" and not cfg.get("on", True)):
+            kind = "dialogue"
+        groups.setdefault(kind, []).append(it)
+    for kind, its in groups.items():
+        st = styles.layer_style(style, kind, layers_cfg)
+        st["custom_pos"] = None
+        st["font_size"] = max(8, st.get("font_size", 26) * font_k)
+        st["radius"] = max(2, st.get("radius", 16) * font_k * 1.4)
+        width = max(90, area.width() * st.get("width_pct", 70) / 100)
+        ops, h = render.layout(its, st, width)
+        x, y = anchor_xy(area, width, h, st.get("anchor", "bottom"), st.get("offset", 80) * k)
+        e = overlay_fx(st, t)
+        p.save()
+        c = QPointF(x + width / 2, y + h / 2)
+        p.translate(c.x(), c.y() + e["dy"]); p.scale(e["scale"], e["scale"]); p.translate(-c.x(), -c.y())
+        render.paint(p, QRectF(x, y, width, h), its, st, e["alpha"], ops, e["reveal"], e["glow"])
+        p.restore()
+
+
+def template_thumb(look: dict, w: int = 300, h: int = 168) -> QPixmap:
+    """Small picture of a template over the game scene, used on the template cards."""
+    pm = QPixmap(w * 2, h * 2); pm.setDevicePixelRatio(2); pm.fill(Qt.transparent)
+    p = QPainter(pm); p.setRenderHint(QPainter.Antialiasing)
+    r = QRectF(0, 0, w, h)
+    clip = QPainterPath(); clip.addRoundedRect(r, 12, 12); p.setClipPath(clip)
+    paint_game_scene(p, r, seed=1)
+    st = {**look, "rtl": True, "layers_on": True, "layers": styles.DEFAULT_LAYERS}
+    items = [styles.SAMPLE_ITEMS[1], *styles.SAMPLE_ITEMS[2:]]
+    paint_layers(p, r, items, st, 1.0, screen_w=1280, min_font_k=0.27)
+    p.end()
+    return pm
+
+
+class TemplateCard(QFrame):
+    clicked = Signal(str)
+    delete = Signal(str)
+
+    def __init__(self, tid: str, tpl: dict):
+        super().__init__()
+        self.tid = tid
+        self.setObjectName("TplCard"); self.setCursor(Qt.PointingHandCursor)
+        self.setProperty("sel", False)
+        v = QVBoxLayout(self); v.setContentsMargins(8, 8, 8, 10); v.setSpacing(6)
+        self.img = QLabel(); self.img.setPixmap(template_thumb(tpl["look"], 236, 132)); self.img.setAlignment(Qt.AlignCenter)
+        v.addWidget(self.img)
+        hh = QHBoxLayout(); hh.setSpacing(6)
+        name = QLabel(tpl["name"]); name.setObjectName("CardTitle"); hh.addWidget(name, 1)
+        if not tpl.get("builtin"):
+            mine = QLabel("قالبي"); mine.setObjectName("Badge"); hh.addWidget(mine)
+            x = QPushButton("حذف"); x.setObjectName("Chip"); x.clicked.connect(lambda: self.delete.emit(self.tid)); hh.addWidget(x)
+        v.addLayout(hh)
+        d = QLabel(tpl.get("desc", "")); d.setObjectName("Hint"); d.setWordWrap(True); d.setMinimumHeight(32)
+        v.addWidget(d)
+        self.setFixedWidth(256)
+
+    def set_selected(self, on: bool):
+        self.setProperty("sel", on)
+        self.style().unpolish(self); self.style().polish(self)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            self.clicked.emit(self.tid)
+
+
+class TemplateGallery(QWidget):
+    """All templates as picture cards in a wrapping grid. One click applies a template."""
+    applied = Signal(str)
+    deleted = Signal(str)
+
+    def __init__(self, cols: int = 3):
+        super().__init__()
+        self.cols = cols
+        self.grid = QGridLayout(self); self.grid.setContentsMargins(0, 0, 0, 0); self.grid.setSpacing(12)
+        self.cards: dict[str, TemplateCard] = {}
+
+    def set_templates(self, templates: dict, current: str):
+        sig = tuple((k, v["name"]) for k, v in templates.items())
+        if sig != getattr(self, "_sig", None):
+            while self.grid.count():
+                w = self.grid.takeAt(0).widget()
+                if w:
+                    w.deleteLater()
+            self.cards = {}
+            for i, (tid, t) in enumerate(templates.items()):
+                c = TemplateCard(tid, t)
+                c.clicked.connect(self.applied.emit); c.delete.connect(self.deleted.emit)
+                self.grid.addWidget(c, i // self.cols, i % self.cols)
+                self.cards[tid] = c
+            self._sig = sig
+        for tid, c in self.cards.items():
+            c.set_selected(tid == current)
+
+
+class FontPicker(QWidget):
+    """The bundled Arabic fonts, each button written in its own font so the choice is made by eye."""
+    changed = Signal(str)
+
+    def __init__(self, cols: int = 3):
+        super().__init__()
+        g = QGridLayout(self); g.setContentsMargins(0, 0, 0, 0); g.setSpacing(8)
+        self.buttons: dict[str, QPushButton] = {}
+        for i, (fam, ar, note) in enumerate(styles.FONTS):
+            b = QPushButton(); b.setObjectName("FontBtn"); b.setCheckable(True); b.setToolTip(f"{fam} — {note}")
+            lay = QVBoxLayout(b); lay.setContentsMargins(12, 8, 12, 8); lay.setSpacing(0)
+            big = QLabel("عرّب لعبتك"); f = QFont(fam); f.setFamilies([fam]); f.setPixelSize(22); f.setBold(True); big.setFont(f)
+            big.setAlignment(Qt.AlignCenter); big.setAttribute(Qt.WA_TransparentForMouseEvents)
+            small = QLabel(ar); small.setObjectName("Hint"); small.setAlignment(Qt.AlignCenter)
+            small.setAttribute(Qt.WA_TransparentForMouseEvents)
+            lay.addWidget(big); lay.addWidget(small)
+            b.setMinimumHeight(74)
+            b.clicked.connect(lambda _=False, fam=fam: self._pick(fam))
+            g.addWidget(b, i // cols, i % cols)
+            self.buttons[fam] = b
+
+    def _pick(self, fam):
+        self.set(fam); self.changed.emit(fam)
+
+    def set(self, fam: str):
+        fam = styles.normalize_font(fam)
+        for k, b in self.buttons.items():
+            b.setChecked(k == fam)
+
+
+class Chips(QWidget):
+    """A row of options where exactly one is chosen."""
+    changed = Signal(str)
+
+    def __init__(self, options: list[tuple[str, str]], wrap: int = 0):
+        super().__init__()
+        lay = QGridLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(6)
+        self.buttons: dict[str, QPushButton] = {}
+        for i, (k, label) in enumerate(options):
+            b = QPushButton(label); b.setObjectName("Opt"); b.setCheckable(True)
+            b.clicked.connect(lambda _=False, k=k: self._pick(k))
+            if wrap:
+                lay.addWidget(b, i // wrap, i % wrap)
+            else:
+                lay.addWidget(b, 0, i)
+            self.buttons[k] = b
+
+    def _pick(self, k):
+        self.set(k); self.changed.emit(k)
+
+    def set(self, k: str):
+        for key, b in self.buttons.items():
+            b.setChecked(key == k)
 
 
 class MonitorMap(QWidget):

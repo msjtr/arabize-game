@@ -14,9 +14,11 @@ import sys
 import threading
 from pathlib import Path
 
+from . import styles
+
 APP_NAME_AR = "عرب لعبتك"
 APP_NAME_EN = "Arabize Game"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 
 
 def data_dir() -> Path:
@@ -77,14 +79,22 @@ DEFAULT_PROFILE = {
         "screen": {
             "monitor": 1, "anchor": "bottom", "offset": 80, "width_pct": 70,
             "custom_pos": None,     # [x, y] in logical pixels after the user drags it
-            "font_family": "Noto Sans Arabic", "font_size": 26, "bold": True,
-            "color": "#FFFFFF", "bg": "#05080F", "bg_opacity": 72,
-            "show_original": False, "max_lines": 4, "fade_ms": 220,
+            "font_family": styles.DEFAULT_FONT, "font_size": 26, "bold": True,
+            "color": "#FFFFFF", "bg": "#0A0E1F", "bg_opacity": 80,
+            "show_original": False, "max_lines": 4,
+            # look (set together by a template, each can still be changed by hand)
+            "template": styles.DEFAULT_TEMPLATE,
+            "box": "card", "text_fx": "shadow", "accent": "#E7B964", "align": "center", "radius": 18,
+            "fx_in": "slide", "fx_out": "fade", "fx_ms": 280,
+            # layers: dialogue / quest / choices / other text each get their own place on screen
+            "layers_on": True,
+            "layers": styles.DEFAULT_LAYERS,
         },
         "vr": {
             "distance_m": 1.4, "width_m": 1.1, "height_m": -0.35,
-            "font_size": 44, "color": "#FFFFFF", "bg": "#05080F", "bg_opacity": 80,
-            "show_original": False,
+            "font_size": 44, "color": "#FFFFFF", "bg": "#0A0E1F", "bg_opacity": 80,
+            "show_original": False, "font_family": styles.DEFAULT_FONT, "bold": True,
+            "box": "card", "text_fx": "shadow", "accent": "#E7B964", "fx_in": "fade", "fx_out": "fade", "fx_ms": 240,
         },
     },
 }
@@ -105,6 +115,7 @@ DEFAULT_SETTINGS = {
         "timeout_s": 8,
     },
     "profiles": {"default": DEFAULT_PROFILE},
+    "templates": {},                # the user's own saved looks: id -> {name, desc, look}
 }
 
 
@@ -142,7 +153,9 @@ class Settings:
                 raw = {}
         data = deep_merge(DEFAULT_SETTINGS, raw)
         # every profile is completed with defaults so new options appear after updates
-        data["profiles"] = {k: deep_merge(DEFAULT_PROFILE, v) for k, v in data["profiles"].items()}
+        raw_profiles = raw.get("profiles") if isinstance(raw.get("profiles"), dict) else {}
+        data["profiles"] = {k: _migrate_profile(deep_merge(DEFAULT_PROFILE, v), raw_profiles.get(k) or {})
+                            for k, v in data["profiles"].items()}
         if "default" not in data["profiles"]:
             data["profiles"]["default"] = copy.deepcopy(DEFAULT_PROFILE)
         if data["active_profile"] not in data["profiles"]:
@@ -234,6 +247,22 @@ class Settings:
                 node = node.setdefault(k, {})
             node[keys[-1]] = value
             self.save()
+
+
+def _migrate_profile(prof: dict, raw: dict) -> dict:
+    """Bring a profile saved by an older version up to date without losing the user's choices."""
+    scr, vr = prof["display"]["screen"], prof["display"]["vr"]
+    raw_scr = (raw.get("display") or {}).get("screen") or {}
+    # 1.0 had a single "fade_ms"; it becomes the effect speed
+    if "fade_ms" in raw_scr and "fx_ms" not in raw_scr:
+        scr["fx_ms"] = int(raw_scr["fade_ms"]) or 0
+        scr["fx_in"] = scr["fx_out"] = "fade" if scr["fx_ms"] else "none"
+    scr.pop("fade_ms", None)
+    if raw_scr and "template" not in raw_scr:
+        scr["template"] = "custom"          # an old profile keeps its look; no built-in template is "selected"
+    scr["font_family"] = styles.normalize_font(scr.get("font_family"))
+    vr["font_family"] = styles.normalize_font(vr.get("font_family"))
+    return prof
 
 
 def _slug(s: str) -> str:

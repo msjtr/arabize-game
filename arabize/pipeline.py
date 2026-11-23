@@ -15,7 +15,7 @@ from .capture import Capturer, ChangeDetector
 from .engines import AllEnginesFailed, Manager, Request
 from .ocr import OcrError, create_ocr
 from .platform_utils import process_usage
-from .textproc import TextTracker, group_lines
+from .textproc import TextTracker, classify, group_lines
 
 
 class LiveTranslator(QThread):
@@ -126,6 +126,8 @@ class LiveTranslator(QThread):
             lines = [l for l in lines if not self._excluded(l, box)]
             blocks = group_lines(lines)
             items = [{"label": b.label, "src": b.text, "box": b.box} for b in blocks]
+            for it, kind in zip(items, classify(items)):
+                it["kind"] = kind
             texts = [b.full_text for b in blocks]
             if not texts:
                 if self.tracker.current:

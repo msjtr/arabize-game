@@ -62,3 +62,27 @@ def icon(name: str, color: str = "#C9D0EA", active: str = "#1A1204", size: int =
     ic.addPixmap(pixmap(name, active, size), QIcon.Normal, QIcon.On)
     ic.addPixmap(pixmap(name, "#5D6488", size), QIcon.Disabled, QIcon.Off)
     return ic
+
+
+# ---------------------------------------------------------------- 3D tiles
+from .. import icons3d  # noqa: E402
+
+PATHS.update({k: v for k, v in icons3d.GLYPHS.items() if k not in PATHS})
+
+
+@lru_cache(maxsize=256)
+def tile(name: str, hue: str = "gold", size: int = 36) -> QPixmap:
+    """Layered 3D icon tile (see icons3d.py), rendered at 2x for sharp edges on high-DPI screens and TVs."""
+    r = QSvgRenderer(QByteArray(icons3d.tile_svg(name, hue).encode()))
+    pm = QPixmap(size * 2, size * 2)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    r.render(p, QRectF(0, 0, size * 2, size * 2))
+    p.end()
+    pm.setDevicePixelRatio(2)
+    return pm
+
+
+def tile_icon(name: str, hue: str = "gold", size: int = 36) -> QIcon:
+    return QIcon(tile(name, hue, size))

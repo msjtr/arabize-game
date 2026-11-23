@@ -133,3 +133,69 @@ class TextTracker:
     def new_blocks(self, blocks: list[str], seen: list[str]) -> list[str]:
         """Blocks that are not near-duplicates of already shown ones (for partial updates)."""
         return [b for b in blocks if all(similarity(b, s) < self.same_ratio for s in seen)]
+
+
+# ------------------------------------------------------------------ what kind of text is this?
+_QUEST = re.compile(r"^(current\s+)?(quest|quests|objective|objectives|mission|missions|task|tasks|goal|goals|journal|"
+                    r"main\s+quest|side\s+quest|new\s+quest|quest\s+updated|objective\s+updated|المهمة|المهام|الهدف)\b", re.I)
+_CHOICE_MARK = re.compile(r"^\s*(\d{1,2}[.)\]:-]|[-•●◆▶►>*]|\[[A-Za-z0-9]\])\s*")
+
+
+def _short(text: str) -> bool:
+    return len(text) <= 64 and len(text.split()) <= 10
+
+
+def classify(items: list[dict]) -> list[str]:
+    """Sort each piece of screen text into a layer: dialogue, quest, choices or other.
+
+    items are dicts with "label", "src" and optional "box" (x, y, w, h). The rules are geometric and simple on
+    purpose, so they behave the same in every game and never need a network call:
+      * a header like QUEST / Objective / Mission           -> quest
+      * a speaker name above the text                        -> dialogue
+      * 2+ short lines stacked in a column, or "1." / "-"    -> choices
+      * the longest sentence-like text                       -> dialogue
+      * anything else (prompts, hints, menu titles)          -> other
+    """
+    kinds = ["other"] * len(items)
+    for i, it in enumerate(items):
+        label, src = (it.get("label") or "").strip(), (it.get("src") or "").strip()
+        if label and _QUEST.match(label) or (not label and _QUEST.match(src) and len(src.split()) <= 3):
+            kinds[i] = "quest"
+        elif label:
+            kinds[i] = "dialogue"
+        elif _CHOICE_MARK.match(src) and _short(_CHOICE_MARK.sub("", src)):
+            kinds[i] = "choices"
+
+    # a column of short, unlabelled lines with the same left/right edge = a list of choices
+    idx = [i for i, it in enumerate(items) if kinds[i] == "other" and it.get("box") and _short(it.get("src", ""))
+           and not it.get("label")]
+    for i in idx:
+        x, y, w, h = items[i]["box"]
+        mates = 0
+        for j in idx:
+            if j == i:
+                continue
+            x2, y2, w2, h2 = items[j]["box"]
+            hh = max(h, h2)
+            same_edge = abs(x - x2) < hh * 1.6 or abs((x + w) - (x2 + w2)) < hh * 1.6
+            close = abs(y - y2) < hh * 4.5
+            if same_edge and close:
+                mates += 1
+        if mates >= 1:
+            kinds[i] = "choices"
+
+    # the quest header can be its own line ("QUEST") with the goal on the next block
+    for i, it in enumerate(items):
+        if kinds[i] == "quest" and not it.get("label") and i + 1 < len(items) and kinds[i + 1] == "other":
+            kinds[i + 1] = "quest"
+
+    # if nothing has a speaker, the longest sentence on screen is the dialogue / narration
+    if "dialogue" not in kinds:
+        best, best_len = -1, 0
+        for i, it in enumerate(items):
+            n = len(it.get("src", ""))
+            if kinds[i] == "other" and (n > best_len) and (len(it.get("src", "").split()) >= 4):
+                best, best_len = i, n
+        if best >= 0:
+            kinds[best] = "dialogue"
+    return kinds

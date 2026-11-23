@@ -66,7 +66,6 @@ class VRSubtitle:
         if not self.active:
             return
         st = dict(self.style)
-        st.setdefault("font_family", "Noto Sans Arabic")
         img = render.render_image(items, st, 1400)
         w, h = img.width(), img.height()
         self._buf = ctypes.create_string_buffer(bytes(img.constBits())[: w * h * 4])

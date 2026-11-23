@@ -4,5 +4,5 @@
 
 - **الموقع (مجاني لأي زائر):** https://msjtr.github.io/arabize-game/
 - **الدليل الكامل (عربي):** [README_AR.md](README_AR.md)
-- **ملف التشغيل لويندوز:** تبويب **Actions** ← آخر تشغيل ناجح ← **ArabizeGame-windows**
+- **تحميل البرنامج لويندوز:** [ArabizeGame-Windows.zip](https://github.com/msjtr/arabize-game/releases/latest/download/ArabizeGame-Windows.zip) — فكّ الضغط وشغّل `ArabizeGame.exe`
 - **البناء محلياً:** `build_windows.bat`

@@ -17,7 +17,7 @@ GOLD2 = "#F6DCA0"
 ERR = "#FF7A6B"
 OK = "#6FE3B0"
 
-FONTS = {"ui": "Noto Sans Arabic", "display": "Noto Kufi Arabic"}
+FONTS = {"ui": "IBM Plex Sans Arabic", "display": "Alexandria"}
 
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
@@ -28,10 +28,18 @@ def app_icon():
     return QIcon(str(ASSETS / "app.png"))
 
 
+_loaded = False
+
+
 def load_fonts() -> None:
+    """Register the bundled Arabic fonts once, so the app looks the same on every PC whatever is installed."""
+    global _loaded
+    if _loaded:
+        return
     d = Path(__file__).resolve().parents[1] / "assets" / "fonts"
-    for f in d.glob("*.ttf"):
+    for f in sorted(d.glob("*.ttf")):
         QFontDatabase.addApplicationFont(str(f))
+    _loaded = True
 
 
 def ui_font(size: int = 10, bold: bool = False) -> QFont:
@@ -47,6 +55,7 @@ def display_font(px: int) -> QFont:
     f.setFamilies([FONTS["display"], FONTS["ui"], "Segoe UI"])
     f.setPixelSize(px)
     f.setBold(True)
+    f.setLetterSpacing(QFont.AbsoluteSpacing, 0)
     return f
 
 
@@ -108,6 +117,17 @@ QMenu {{ background: {PANEL}; border: 1px solid {LINE}; padding: 6px; }}
 QMenu::item {{ padding: 8px 18px; border-radius: 6px; }}
 QMenu::item:selected {{ background: rgba(231,185,100,0.2); }}
 QMessageBox {{ background: {DEEP}; }}
+QFrame#TplCard {{ background: rgba(255,255,255,0.035); border: 1px solid {LINE}; border-radius: 16px; }}
+QFrame#TplCard:hover {{ border-color: rgba(231,185,100,0.6); background: rgba(255,255,255,0.06); }}
+QFrame#TplCard[sel="true"] {{ border: 2px solid {GOLD}; background: rgba(231,185,100,0.10); }}
+QLabel#Badge {{ color: #1A1204; background: {GOLD}; border-radius: 8px; padding: 1px 8px; font-size: 11px; font-weight: bold; }}
+QPushButton#FontBtn {{ background: rgba(0,0,0,0.22); border: 1px solid {LINE}; border-radius: 14px; padding: 0; }}
+QPushButton#FontBtn:hover {{ border-color: rgba(231,185,100,0.6); }}
+QPushButton#FontBtn:checked {{ border: 2px solid {GOLD}; background: rgba(231,185,100,0.12); }}
+QPushButton#Opt {{ padding: 8px 12px; border-radius: 11px; font-size: 13px; }}
+QPushButton#Opt:checked {{ background: rgba(231,185,100,0.16); border: 1px solid {GOLD}; color: {GOLD2}; font-weight: bold; }}
+QFrame#LayerBox {{ background: rgba(0,0,0,0.18); border: 1px solid {LINE}; border-radius: 14px; }}
+QPushButton#Nav {{ padding: 8px 12px; }}
 """
 
 

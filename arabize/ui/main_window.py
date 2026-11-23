@@ -1,7 +1,7 @@
 """Main window: sidebar navigation, header with game profile and simple/advanced mode, page stack."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QHBoxLayout, QLabel, QMainWindow, QPushButton,
                                QStackedWidget, QVBoxLayout, QWidget)
 
@@ -10,9 +10,10 @@ from . import icons, theme
 from .pages import EnginesPage, GamesPage, HelpPage, HistoryPage, HomePage, HotkeysPage, LookPage, ScreensPage
 from .widgets import Toast
 
-NAV = [("home", "التشغيل", HomePage), ("monitor", "الشاشة والمنطقة", ScreensPage), ("palette", "المظهر", LookPage),
-       ("lang", "المحركات واللغة", EnginesPage), ("games", "الألعاب", GamesPage), ("hist", "السجل", HistoryPage),
-       ("keyboard", "الاختصارات", HotkeysPage), ("help", "المساعدة", HelpPage)]
+NAV = [("power", "التشغيل", HomePage, "gold"), ("monitor", "الشاشة والمنطقة", ScreensPage, "blue"),
+       ("palette", "المظهر والقوالب", LookPage, "rose"), ("lang", "المحركات واللغة", EnginesPage, "cyan"),
+       ("games", "الألعاب", GamesPage, "violet"), ("hist", "السجل", HistoryPage, "emerald"),
+       ("keyboard", "الاختصارات", HotkeysPage, "slate"), ("help", "المساعدة", HelpPage, "coral")]
 
 
 class MainWindow(QMainWindow):
@@ -29,7 +30,7 @@ class MainWindow(QMainWindow):
         side = QWidget(); side.setObjectName("Sidebar"); side.setFixedWidth(236)
         sv = QVBoxLayout(side); sv.setContentsMargins(16, 22, 16, 16); sv.setSpacing(4)
         brand = QHBoxLayout()
-        logo = QLabel(); logo.setPixmap(icons.pixmap("pad", theme.GOLD, 34, 2.2)); brand.addWidget(logo)
+        logo = QLabel(); logo.setPixmap(icons.tile("pad", "gold", 46)); brand.addWidget(logo)
         names = QVBoxLayout(); names.setSpacing(0)
         b1 = QLabel(APP_NAME_AR); b1.setObjectName("Brand"); b1.setFont(theme.display_font(22)); names.addWidget(b1)
         b2 = QLabel(APP_NAME_EN.upper()); b2.setObjectName("BrandEn"); names.addWidget(b2)
@@ -38,9 +39,9 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.navgroup = QButtonGroup(self)
         self.pages = []
-        for i, (ic, text, cls) in enumerate(NAV):
-            b = QPushButton(icons.icon(ic, theme.MUTED, "#1A1204"), "   " + text)
-            b.setObjectName("Nav"); b.setCheckable(True); b.setIconSize(b.iconSize() * 1.1)
+        for i, (ic, text, cls, hue) in enumerate(NAV):
+            b = QPushButton(icons.tile_icon(ic, hue, 32), "  " + text)
+            b.setObjectName("Nav"); b.setCheckable(True); b.setIconSize(QSize(32, 32))
             b.clicked.connect(lambda _=False, i=i: self.go(i))
             self.navgroup.addButton(b, i); sv.addWidget(b)
             page = cls(ctrl); self.pages.append(page); self.stack.addWidget(page)

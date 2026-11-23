@@ -24,9 +24,10 @@ STEPS = [
     ("حدّد منطقة النص",
      "الأفضل أن تحدد مكان الحوار فقط بدل الشاشة كاملة: أسرع وأدق. اضغط «تحديد منطقة» أو Ctrl+Shift+R، "
      "ثم اسحب مستطيلاً حول صندوق الحوار في اللعبة.", ("جرّب تحديد منطقة الآن", "region")),
-    ("اضبط شكل الترجمة",
-     "من صفحة «المظهر» تتحكم بالخط وحجمه ولونه ولون الخلفية وشفافيتها ومكان الترجمة. "
-     "تقدر أيضاً تسحب الترجمة بالماوس إلى أي مكان. التغييرات تظهر في المعاينة فوراً.", ("افتح صفحة المظهر", "look")),
+    ("اختر قالباً واضبط الشكل",
+     "من صفحة «المظهر والقوالب» اختر قالباً جاهزاً بضغطة: سينمائي، صندوق حوار، تقني، تلفزيون، بسيط وغيرها. "
+     "ثم عدّل الخط وحجمه ولونه والخلفية وشفافيتها وتأثير الظهور. الحوار والمهمة والخيارات تظهر في طبقات منفصلة، "
+     "ولكل طبقة مكانها، وتقدر تسحبها بالماوس. احفظ شكلك قالباً خاصاً وشاركه.", ("افتح صفحة المظهر", "look")),
     ("اختر محرك الترجمة واللغة",
      "يعمل البرنامج مجاناً مع Google وMyMemory، ويمكنك إضافة Claude (الأذكى في فهم السياق) أو DeepL بمفتاحك. "
      "إن تعطل محرك ينتقل البرنامج تلقائياً للذي بعده.", ("اختبر المحركات", "engines")),
@@ -148,10 +149,17 @@ class Illustration(QWidget):
         p.drawPixmap(int(sel.right() - 6), int(sel.bottom() - 6), icons.pixmap("move", theme.GOLD2, 20))
 
     def _s4(self, p, R, t):
+        # cycles through the ready-made templates, each playing its own entrance effect
+        from .. import styles
+        from .widgets import paint_layers
         paint_game_scene(p, R, t * 4)
-        i = int(t / 1.2) % 4
-        sizes, colors, opas = [18, 24, 30, 22], ["#FFFFFF", "#FFE14D", "#F6DCA0", "#9FE8FF"], [72, 40, 90, 0]
-        self._sub(p, R, "استعد أيها المحارب، فالمعركة الأخيرة بدأت.", sizes[i], color=colors[i], opacity=opas[i])
+        ids = list(styles.TEMPLATES)
+        i = int(t / 1.6) % len(ids)
+        look = styles.TEMPLATES[ids[i]]["look"]
+        st = {**look, "rtl": True, "layers_on": True, "layers": styles.DEFAULT_LAYERS}
+        paint_layers(p, R, styles.SAMPLE_ITEMS, st, min(1.0, (t % 1.6) / 0.6), screen_w=1500, min_font_k=0.3)
+        f = theme.display_font(15); p.setFont(f); p.setPen(QColor(theme.GOLD2))
+        p.drawText(R.adjusted(16, 12, -16, -12), Qt.AlignTop | Qt.AlignLeft | Qt.AlignAbsolute, f"قالب: {styles.TEMPLATES[ids[i]]['name']}")
 
     def _s5(self, p, R, t):
         names = ["Google", "MyMemory", "Claude", "DeepL"]

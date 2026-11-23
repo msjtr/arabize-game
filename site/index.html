@@ -11,7 +11,7 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Reem+Kufi:wght@500;700&family=IBM+Plex+Sans+Arabic:wght@400;500;700&family=Cairo:wght@600;800&family=Tajawal:wght@500;800&family=Almarai:wght@700;800&family=Noto+Naskh+Arabic:wght@600;700&family=Outfit:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Alexandria:wght@500;700&family=IBM+Plex+Sans+Arabic:wght@400;500;700&family=Readex+Pro:wght@500;700&family=Tajawal:wght@700&family=Cairo:wght@700&family=Noto+Naskh+Arabic:wght@700&display=swap" rel="stylesheet">
 <style>
 /* ============ tokens ============ */
 :root{
@@ -19,8 +19,8 @@
   --mist:#e3e7f7; --muted:#8a92b6; --line:rgba(227,231,247,.09); --line2:rgba(227,231,247,.17);
   --err:#ff7a6b; --ok:#6fe3b0;
   --acc:#e7b964; --acc2:#f6dca0; --glow:rgba(231,185,100,.3);
-  --ui:"IBM Plex Sans Arabic",system-ui,sans-serif; --display:"Reem Kufi","IBM Plex Sans Arabic",sans-serif; --latin:"Outfit",system-ui,sans-serif;
-  --sub-font:"Cairo",sans-serif; --sub-size:28px; --sub-color:#fff; --sub-scale:1; --sub-bga:.6; --vr-d:12px;
+  --ui:"IBM Plex Sans Arabic",system-ui,sans-serif; --display:"Alexandria","IBM Plex Sans Arabic",sans-serif; --latin:"IBM Plex Sans Arabic",system-ui,sans-serif;
+  --sub-font:"IBM Plex Sans Arabic",sans-serif; --sub-bgc:10,14,31; --sub-acc:#e7b964; --sub-size:28px; --sub-color:#fff; --sub-scale:1; --sub-bga:.6; --vr-d:12px;
   --ovh:0px; --toph:108px;
 }
 [data-theme="neon"]{--acc:#4fd8ff;--acc2:#a6ecff;--glow:rgba(79,216,255,.28)}
@@ -40,13 +40,11 @@ button{cursor:pointer}
 .ic.sm{width:16px;height:16px}
 
 /* ============ 3D extruded icons ============ */
-.i3d{--s:22px;--ib:var(--muted);--it:#d9def3;position:relative;display:inline-block;flex:none;width:var(--s);height:var(--s);
-  transform-style:preserve-3d;transform:perspective(170px) rotateX(18deg) rotateY(-26deg);transition:transform .55s cubic-bezier(.2,.8,.2,1)}
-.i3d svg{position:absolute;inset:0;width:100%;height:100%;fill:none;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
-.i3d svg:last-child{stroke:var(--it)!important;filter:drop-shadow(0 0 3px var(--glow))}
-.gold3d{--ib:var(--acc);--it:#fff6dc}
-.i3d.big{--s:54px}
-.i3d.huge{--s:72px}
+.i3d{--s:22px;position:relative;display:inline-block;flex:none;width:var(--s);height:var(--s);
+  transform:perspective(220px) rotateX(0) rotateY(0);transition:transform .55s cubic-bezier(.2,.8,.2,1),filter .3s}
+.i3d>svg{display:block;width:100%;height:100%;overflow:visible}
+.i3d.big{--s:58px}
+.i3d.huge{--s:76px}
 @keyframes sway{0%,100%{transform:perspective(220px) rotateX(16deg) rotateY(-30deg)}50%{transform:perspective(220px) rotateX(6deg) rotateY(30deg)}}
 @keyframes bob{0%,100%{transform:perspective(220px) rotateX(18deg) rotateY(-24deg) translateY(0)}50%{transform:perspective(220px) rotateX(10deg) rotateY(-8deg) translateY(-6px)}}
 
@@ -85,7 +83,7 @@ body.no-grain .grain,body.no-dust #dust{display:none}
 .bar1,.tabs{max-width:1120px;margin:0 auto;padding-inline:20px}
 .bar1{display:flex;align-items:center;gap:12px;padding-block:12px 6px}
 .brand{display:flex;align-items:center;gap:12px;min-width:0;text-decoration:none;color:inherit}
-.brand .i3d{--s:38px;animation:sway 7s ease-in-out infinite}
+.brand .i3d{--s:42px;animation:sway 7s ease-in-out infinite}
 .names{min-width:0}
 .names b{display:block;font-family:var(--display);font-weight:700;font-size:24px;line-height:1.15;white-space:nowrap;
   background:linear-gradient(180deg,#fff,var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -98,9 +96,10 @@ body.no-grain .grain,body.no-dust #dust{display:none}
 .tabs::-webkit-scrollbar{display:none}
 .tabs button{position:relative;display:flex;align-items:center;gap:9px;border:0;background:none;color:var(--muted);padding:10px 14px 12px;font-size:14px;font-weight:500;white-space:nowrap;transition:color .2s}
 .tabs button:hover{color:var(--mist)}
-.tabs button:hover .i3d{transform:perspective(170px) rotateX(10deg) rotateY(-40deg) translateY(-1px)}
+.tabs button .i3d{--s:26px;filter:saturate(.35) brightness(.78)}
+.tabs button:hover .i3d{filter:saturate(.8) brightness(.95);transform:perspective(220px) rotateX(10deg) rotateY(-24deg) translateY(-1px)}
 .tabs button.on{color:var(--acc2)}
-.tabs button.on .i3d{--ib:var(--acc);--it:#fff6dc;transform:perspective(170px) rotateX(22deg) rotateY(-34deg) scale(1.12)}
+.tabs button.on .i3d{filter:none;transform:perspective(220px) rotateX(14deg) rotateY(-22deg) scale(1.1)}
 .tabs button::after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:2px;border-radius:2px;background:var(--acc);transform:scaleX(0);transition:transform .3s cubic-bezier(.2,.8,.2,1);box-shadow:0 0 10px var(--acc)}
 .tabs button.on::after{transform:scaleX(1)}
 .cnt{font-size:11px;line-height:17px;min-width:18px;padding:0 5px;border-radius:9px;background:rgba(255,255,255,.1);color:var(--mist);text-align:center}
@@ -120,11 +119,11 @@ main{max-width:1120px;margin:0 auto;padding:22px 20px calc(var(--ovh) + 48px)}
 .modes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
 .mode{display:flex;align-items:center;gap:14px;text-align:start;padding:14px 16px;border-radius:18px;border:1px solid var(--line);background:rgba(255,255,255,.025);transition:border-color .25s,background .25s,transform .2s}
 .mode:hover{border-color:var(--line2);transform:translateY(-1px)}
-.mode .i3d{--s:34px}
+.mode .i3d{--s:40px;filter:saturate(.4) brightness(.8)}
 .mode b{display:block;font-size:15px}
 .mode small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px;line-height:1.5}
 .mode.on{border-color:color-mix(in srgb,var(--acc) 55%,transparent);background:linear-gradient(135deg,color-mix(in srgb,var(--acc) 14%,transparent),rgba(255,255,255,.02));box-shadow:0 14px 40px -26px var(--glow)}
-.mode.on .i3d{--ib:var(--acc);--it:#fff6dc;animation:bob 3.5s ease-in-out infinite}
+.mode.on .i3d{filter:none;animation:bob 3.5s ease-in-out infinite}
 
 /* ============ studio ============ */
 .studio{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -242,6 +241,7 @@ body.hide-orig .bk .og{display:none}
 .sub[data-bg="solid"]{background:rgba(0,0,0,var(--sub-bga))}
 .sub[data-bg="edge"]{background:none;text-shadow:0 0 2px #000,0 0 2px #000,0 2px 6px #000,0 0 14px rgba(0,0,0,.8)}
 .sub .w{display:inline-block;white-space:pre}
+.sub.anim-rise,.sub.anim-blur,.sub.ex-scatter{unicode-bidi:isolate}
 .anim-rise .w{opacity:0;transform:translateY(.45em);animation:rise .55s cubic-bezier(.2,.8,.2,1) forwards}
 @keyframes rise{to{opacity:1;transform:none}}
 .anim-blur .w{opacity:0;filter:blur(10px);animation:unblur .7s ease forwards}
@@ -293,11 +293,86 @@ body.hide-orig .bk .og{display:none}
 .seg button{border:0;background:none;color:var(--muted);padding:6px 10px;border-radius:999px;font-size:13px;font-family:var(--latin)}
 .seg button.on{background:rgba(255,255,255,.1);color:var(--mist)}
 
+
+/* ============ subtitle looks: boxes, text effects, effects, layers ============ */
+.sub[data-bg="glass"]{background:rgba(var(--sub-bgc),var(--sub-bga))}
+.sub[data-bg="card"]{position:relative;background:rgba(var(--sub-bgc),var(--sub-bga));border:1.5px solid color-mix(in srgb,var(--sub-acc) 70%,transparent);
+  border-radius:16px;padding-inline:1em 1.1em;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 10px 30px rgba(0,0,0,.35)}
+.sub[data-bg="card"]::after{content:"";position:absolute;inset-inline-start:5px;top:50%;width:4px;height:min(46px,58%);transform:translateY(-50%);border-radius:2px;background:var(--sub-acc)}
+.sub[data-bg="bar"]{background:rgba(var(--sub-bgc),var(--sub-bga));border-radius:0;border-top:2px solid color-mix(in srgb,var(--sub-acc) 70%,transparent);width:100%;max-width:none}
+.sub[data-bg="bubble"]{position:relative;background:rgba(var(--sub-bgc),var(--sub-bga));border:2px solid var(--sub-acc);border-radius:24px;margin-bottom:.5em}
+.sub[data-bg="bubble"]::after{content:"";position:absolute;left:50%;bottom:-.5em;width:.85em;height:.85em;background:rgb(var(--sub-bgc));
+  border-right:2px solid var(--sub-acc);border-bottom:2px solid var(--sub-acc);transform:translateX(-50%) rotate(45deg)}
+.subwrap:has(.sub[data-bg="bar"]){padding-inline:0}
+.sub[data-fx="shadow"]{text-shadow:0 2px 4px rgba(0,0,0,.85)}
+.sub[data-fx="outline"]{text-shadow:-2px 0 #000,2px 0 #000,0 -2px #000,0 2px #000,-1.5px -1.5px #000,1.5px 1.5px #000,-1.5px 1.5px #000,1.5px -1.5px #000,0 3px 7px rgba(0,0,0,.7)}
+.sub[data-fx="glow"]{text-shadow:0 0 6px var(--sub-acc),0 0 18px var(--sub-acc),0 2px 3px rgba(0,0,0,.6)}
+.sub[data-fx="none"]{text-shadow:none}
+.anim-zoom{animation:zoomIn .45s cubic-bezier(.2,.8,.2,1) both}
+@keyframes zoomIn{from{opacity:0;transform:scale(.84)}}
+.anim-glow{animation:glowIn .75s ease both}
+@keyframes glowIn{from{opacity:0;text-shadow:0 0 26px var(--sub-acc),0 0 60px var(--sub-acc)}35%{opacity:1}}
+.ex-zoom{animation:exZoom .34s ease-in forwards}
+@keyframes exZoom{to{opacity:0;transform:scale(.84)}}
+/* layers: quest + choices float in their own place while the dialogue plays */
+.layer{position:absolute;z-index:4;max-width:36%;pointer-events:none;font-family:var(--sub-font);color:var(--sub-color);font-weight:700;
+  font-size:max(11px,calc(var(--sub-size) * var(--sub-scale) * .56));line-height:1.55;padding:.5em .85em;border-radius:12px;
+  background:rgba(var(--sub-bgc),max(.62,var(--sub-bga)));border:1px solid color-mix(in srgb,var(--sub-acc) 55%,transparent);
+  box-shadow:0 10px 30px rgba(0,0,0,.35);opacity:0;transform:translateY(-8px);transition:opacity .45s,transform .45s cubic-bezier(.2,.8,.2,1);unicode-bidi:plaintext}
+.layer.on{opacity:1;transform:none}
+.layer .lh{display:block;color:var(--sub-acc);font-size:.78em;margin-bottom:.1em}
+.layer ol{margin:0;padding:0;list-style:none}.layer li::before{content:"◆";color:var(--sub-acc);margin-inline-end:.5em;font-size:.8em}
+.layer[data-fx="outline"],.layer[data-fx="glow"]{text-shadow:0 2px 4px rgba(0,0,0,.85)}
+.layer[data-bg="edge"]{background:rgba(0,0,0,.35);border-color:transparent}
+.layer.lq[data-pos="tr"]{top:calc(9% + 40px);right:3%}.layer.lq[data-pos="tl"]{top:calc(9% + 12px);left:3%}
+.layer.lq[data-pos="tc"]{top:calc(9% + 12px);left:50%;transform:translateX(-50%)}.layer.lq[data-pos="tc"].on{transform:translateX(-50%)}
+.layer.lc[data-pos="r"]{top:50%;right:3%;transform:translateY(-50%)}.layer.lc[data-pos="r"].on{transform:translateY(-50%)}
+.layer.lc[data-pos="l"]{top:50%;left:3%;transform:translateY(-50%)}.layer.lc[data-pos="l"].on{transform:translateY(-50%)}
+.cinema.idle .layer{opacity:0}
+.minicine .layer{font-size:max(9px,calc(var(--sub-size) * .4))}
+.minicine .layer.lq[data-pos="tr"],.minicine .layer.lq[data-pos="tl"],.minicine .layer.lq[data-pos="tc"]{top:calc(8% + 30px)}
+@media (max-width:639px){.minicine .layer{display:none}}
+/* template gallery */
+.tpls{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:10px;margin-top:8px}
+.tpl{display:flex;flex-direction:column;gap:6px;text-align:start;padding:8px 8px 10px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.025);
+  color:inherit;transition:border-color .25s,transform .2s,background .25s}
+.tpl:hover{border-color:var(--line2);transform:translateY(-2px)}
+.tpl.on{border:2px solid var(--acc);background:color-mix(in srgb,var(--acc) 10%,transparent);padding:7px 7px 9px}
+.tpl .ts{position:relative;aspect-ratio:16/8.5;border-radius:11px;overflow:hidden;display:flex;align-items:flex-end;justify-content:center;padding:0 6% 9%;
+  background:radial-gradient(60% 70% at 50% 72%,rgba(246,220,160,.42),transparent 70%),linear-gradient(#0b1033,#2a2156 50%,#7a4a52 78%,#1a1020)}
+.tpl .ts::before{content:"";position:absolute;inset:auto 0 0;height:42%;background:#120b1c;clip-path:polygon(0 50%,15% 30%,32% 52%,50% 22%,68% 48%,84% 28%,100% 45%,100% 100%,0 100%)}
+.tpl .ts .sub{position:relative;font-size:12px;line-height:1.5;padding:.25em .7em;font-weight:700}
+.tpl .ts .sub[data-bg="bubble"]{margin-bottom:.6em}
+.tpl b{font-size:14px;padding-inline:4px}
+.tpl small{color:var(--muted);font-size:12px;line-height:1.5;padding-inline:4px}
+/* font picker + chips */
+.fonts{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;padding:10px 0}
+.fonts button{border:1px solid var(--line2);background:rgba(0,0,0,.22);border-radius:12px;padding:8px 6px;color:var(--mist);transition:border-color .2s}
+.fonts button b{display:block;font-size:20px;font-weight:700;line-height:1.5}
+.fonts button small{display:block;color:var(--muted);font-size:11.5px;font-family:var(--ui)}
+.fonts button.on{border:2px solid var(--acc);background:color-mix(in srgb,var(--acc) 12%,transparent);padding:7px 5px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0 10px}
+.chips button{border:1px solid var(--line2);background:rgba(255,255,255,.03);color:var(--mist);border-radius:999px;padding:7px 13px;font-size:13px}
+.chips button.on{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 16%,transparent);color:var(--acc2);font-weight:700}
+.clabel{font-size:14px;padding-top:10px;border-top:1px solid var(--line)}
+.box h3+.clabel{border-top:0}
+.box.wide{grid-column:1/-1}
+/* desktop app download */
+.pcapp{display:flex;align-items:center;gap:16px;margin:0 0 16px;padding:14px 16px;border-radius:18px;
+  border:1px solid color-mix(in srgb,var(--acc) 45%,transparent);background:linear-gradient(135deg,color-mix(in srgb,var(--acc) 13%,transparent),rgba(255,255,255,.02))}
+.pcapp .i3d{--s:52px}
+.pcapp div{flex:1;min-width:0}
+.pcapp b{display:block;font-size:15.5px}
+.pcapp small{display:block;color:var(--muted);font-size:13px;line-height:1.6;margin-top:2px}
+.pcapp a{flex:none;display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-weight:700;color:#1a1204;border-radius:12px;padding:10px 16px;
+  background:linear-gradient(135deg,var(--acc2),var(--acc))}
+@media (max-width:640px){.pcapp{flex-wrap:wrap}.pcapp a{width:100%;justify-content:center}}
+
 /* ============ settings / forms ============ */
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:14px}
 .box{background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:16px;padding:16px}
 .box h3{display:flex;align-items:center;gap:10px;margin:0 0 6px;font-size:15px;font-weight:700}
-.box h3 .i3d{--s:24px;--ib:var(--acc);--it:#fff6dc}
+.box h3 .i3d{--s:30px}
 .fr{display:flex;align-items:center;gap:12px;padding:11px 0;border-top:1px solid var(--line)}
 .box h3+.fr{border-top:0}
 .fr>label,.fr>.lb{flex:1;min-width:0;font-size:14px}
@@ -416,6 +491,11 @@ body.calm .aurora,body.calm .scene svg,body.calm .scene .sun,body.calm .go::befo
 <!-- Lucide icons (ISC licence) -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="i-pad" viewBox="0 0 24 24"><line x1="6" x2="10" y1="11" y2="11"/><line x1="8" x2="8" y1="9" y2="13"/><line x1="15" x2="15.01" y1="12" y2="12"/><line x1="18" x2="18.01" y1="10" y2="10"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></symbol>
+  <symbol id="i-wand" viewBox="0 0 24 24"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></symbol>
+  <symbol id="i-tpl" viewBox="0 0 24 24"><rect width="18" height="7" x="3" y="3" rx="1"/><rect width="9" height="7" x="3" y="14" rx="1"/><rect width="5" height="7" x="16" y="14" rx="1"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></symbol>
   <symbol id="i-lang" viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></symbol>
   <symbol id="i-clap" viewBox="0 0 24 24"><path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/><path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol>
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol>
@@ -477,6 +557,11 @@ body.calm .aurora,body.calm .scene svg,body.calm .scene .sun,body.calm .go::befo
 <main>
   <!-- ===== TRANSLATE ===== -->
   <section class="view on" id="v-tr">
+    <div class="pcapp" id="pcapp">
+      <span class="i3d" data-i="monitor" data-h="blue"></span>
+      <div><b>برنامج عرب لعبتك للكمبيوتر</b><small>يقرأ الشاشة أثناء اللعب ويعرض الترجمة فوق اللعبة مباشرة، على الشاشات والتلفزيونات المتصلة ونظارات VR. مجاني لويندوز 10 و11.</small></div>
+      <a href="https://github.com/msjtr/arabize-game/releases/latest/download/ArabizeGame-Windows.zip" rel="noopener"><svg class="ic sm"><use href="#i-dl"/></svg>تحميل البرنامج</a>
+    </div>
     <div class="modes" role="tablist" aria-label="طريقة الإدخال">
       <button class="mode on" data-m="shot" role="tab"><span class="i3d" data-i="scan" data-l="6"></span><span><b>لقطة من اللعبة</b><small>ارفع صورة الشاشة فيقرأ النص ويرتّب الحوار والمهمة والخيارات</small></span></button>
       <button class="mode" data-m="text" role="tab"><span class="i3d" data-i="type" data-l="6"></span><span><b>نص مكتوب</b><small>الصق الحوار أو ملف نصوص اللعبة</small></span></button>
@@ -571,6 +656,8 @@ body.calm .aurora,body.calm .scene svg,body.calm .scene .sun,body.calm .go::befo
         </div>
         <div class="letter t"></div><div class="letter b"></div>
         <div class="hud"><span class="dot"></span><span id="hudtxt">في الانتظار</span></div>
+        <div class="layer lq" id="lyQuest" data-pos="tr"></div>
+        <div class="layer lc" id="lyChoice" data-pos="r"></div>
         <div class="subwrap" id="subwrap" data-pos="bottom"><div class="sub" id="sub" data-bg="glass">ترجمتك ستظهر هنا</div></div>
         <div class="vr-split" aria-hidden="true">
           <div class="eye l" data-pos="bottom"><div class="sub" id="subL" data-bg="glass"></div></div>
@@ -602,40 +689,68 @@ body.calm .aurora,body.calm .scene svg,body.calm .scene .sun,body.calm .go::befo
 
   <!-- ===== LOOK ===== -->
   <section class="view" id="v-sc">
-    <div class="vh"><h2>مظهر الترجمة</h2><p>كل تغيير يظهر فوراً في المعاينة.</p></div>
+    <div class="vh"><h2>المظهر والقوالب</h2><p>اختر قالباً بضغطة، ثم عدّل ما تريد. كل تغيير يظهر فوراً في المعاينة.</p></div>
     <div class="minicine" id="mini">
       <div class="letter t"></div><div class="letter b"></div>
       <span class="minilabel"><svg class="ic sm"><use href="#i-eye"/></svg>معاينة مباشرة</span>
+      <div class="layer lq on" id="miniQuest" data-pos="tr"><span class="lh">◆ المهمة</span>اذهب إلى المنارة القديمة</div>
+      <div class="layer lc on" id="miniChoice" data-pos="r"><ol><li>أنا معك.</li><li>ليس اليوم.</li></ol></div>
       <div class="subwrap" id="miniWrap" data-pos="bottom"><div class="sub" id="miniSub" data-bg="glass"></div></div>
     </div>
     <div class="grid" style="margin-top:14px">
+      <div class="box wide">
+        <h3><span class="i3d" data-i="tpl" data-h="gold"></span>القوالب الجاهزة</h3>
+        <div class="tpls" id="tpls"></div>
+      </div>
       <div class="box">
-        <h3><span class="i3d" data-i="type"></span>الخط واللون</h3>
-        <div class="fr"><label for="subFont">نوع الخط</label><select id="subFont">
-          <option value="Cairo">القاهرة</option><option value="Tajawal">تجوال</option><option value="Almarai">المراعي</option>
-          <option value="Reem Kufi">ريم كوفي</option><option value="Noto Naskh Arabic">نسخ</option><option value="IBM Plex Sans Arabic">بلكس</option></select></div>
-        <div class="fr"><label for="subSize">حجم الخط</label><input type="range" id="subSize" min="16" max="56" step="1"><span class="val" id="subSizeV"></span></div>
+        <h3><span class="i3d" data-i="type" data-h="blue"></span>الخط</h3>
+        <div class="fonts" id="fontPick"></div>
+        <div class="fr"><label for="subSize">حجم الخط<small>للتلفزيون البعيد اختر 36 فأكثر</small></label><input type="range" id="subSize" min="16" max="56" step="1"><span class="val" id="subSizeV"></span></div>
         <div class="fr"><span class="lb">لون الكلام</span><div class="swatches" id="subColor">
           <button style="--c:#ffffff" data-c="#ffffff" aria-label="أبيض"></button>
           <button style="--c:#ffe14d" data-c="#ffe14d" aria-label="أصفر"></button>
-          <button style="--c:var(--acc2)" data-c="accent" aria-label="لون الثيم"></button>
+          <button style="--c:#f6dca0" data-c="#f6dca0" aria-label="ذهبي فاتح"></button>
           <button style="--c:#9fe8ff" data-c="#9fe8ff" aria-label="سماوي"></button>
-          <button style="--c:#b7ffb0" data-c="#b7ffb0" aria-label="أخضر فاتح"></button></div></div>
+          <button style="--c:#b7ffb0" data-c="#b7ffb0" aria-label="أخضر فاتح"></button>
+          <button style="--c:#121212" data-c="#121212" aria-label="أسود"></button></div></div>
+        <div class="fr"><span class="lb">لون الاسم والحافة</span><div class="swatches" id="subAcc">
+          <button style="--c:#e7b964" data-c="#e7b964" aria-label="ذهبي"></button>
+          <button style="--c:#5ce1e6" data-c="#5ce1e6" aria-label="سماوي"></button>
+          <button style="--c:#ff4fd8" data-c="#ff4fd8" aria-label="وردي"></button>
+          <button style="--c:#7cf29a" data-c="#7cf29a" aria-label="أخضر"></button>
+          <button style="--c:#ff8466" data-c="#ff8466" aria-label="مرجاني"></button></div></div>
       </div>
       <div class="box">
-        <h3><span class="i3d" data-i="film"></span>المكان والخلفية</h3>
-        <div class="fr"><label for="subPos">مكان الترجمة</label><select id="subPos"><option value="bottom">أسفل</option><option value="center">وسط</option><option value="top">أعلى</option></select></div>
-        <div class="fr"><label for="subBg">نوع الخلفية</label><select id="subBg"><option value="glass">زجاجية</option><option value="solid">معتمة</option><option value="edge">بدون خلفية</option></select></div>
+        <h3><span class="i3d" data-i="palette" data-h="rose"></span>الخلفية والحروف</h3>
+        <div class="clabel">شكل الخلفية</div>
+        <div class="chips" id="subBgC" data-key="subBg"><button data-k="glass">زجاجي</button><button data-k="card">بطاقة بحافة ملوّنة</button><button data-k="bar">شريط بعرض الشاشة</button><button data-k="bubble">فقاعة حوار</button><button data-k="edge">بدون خلفية</button></div>
+        <div class="fr"><span class="lb">لون الخلفية</span><div class="swatches" id="subBgCol">
+          <button style="--c:#0a0e1f" data-c="#0a0e1f" aria-label="كحلي"></button>
+          <button style="--c:#000000" data-c="#000000" aria-label="أسود"></button>
+          <button style="--c:#1b1209" data-c="#1b1209" aria-label="بني"></button>
+          <button style="--c:#03121a" data-c="#03121a" aria-label="أزرق داكن"></button>
+          <button style="--c:#ffffff" data-c="#ffffff" aria-label="أبيض"></button></div></div>
         <div class="fr"><label for="subBgA">عتامة الخلفية</label><input type="range" id="subBgA" min="10" max="100" step="5"><span class="val" id="subBgAV"></span></div>
+        <div class="clabel">تأثير الحروف</div>
+        <div class="chips" id="textFxC" data-key="textFx"><button data-k="shadow">ظل ناعم</button><button data-k="outline">حدّ حول الحروف</button><button data-k="glow">توهّج</button><button data-k="none">بدون</button></div>
       </div>
       <div class="box">
-        <h3><span class="i3d" data-i="spark"></span>الحركة</h3>
-        <div class="fr"><label for="subAnim">تأثير الدخول</label><select id="subAnim"><option value="rise">صعود الكلمات</option><option value="type">آلة كاتبة</option><option value="blur">من الضباب</option><option value="fade">تلاشٍ</option><option value="none">فوري</option></select></div>
-        <div class="fr"><label for="subExit">تأثير الخروج</label><select id="subExit"><option value="scatter">تطاير الكلمات</option><option value="blur">ذوبان في الضباب</option><option value="slide">انزلاق للأسفل</option><option value="fade">تلاشٍ</option><option value="none">بدون</option></select></div>
+        <h3><span class="i3d" data-i="wand" data-h="coral"></span>تأثيرات الظهور والاختفاء</h3>
+        <div class="clabel">عند ظهور سطر جديد</div>
+        <div class="chips" id="subAnimC" data-key="subAnim"><button data-k="rise">صعود الكلمات</button><button data-k="fade">ظهور تدريجي</button><button data-k="zoom">تكبير</button><button data-k="type">كتابة حرفاً حرفاً</button><button data-k="glow">وميض متوهّج</button><button data-k="blur">من الضباب</button><button data-k="none">فوري</button></div>
+        <div class="clabel">عند انتهاء السطر</div>
+        <div class="chips" id="subExitC" data-key="subExit"><button data-k="fade">اختفاء تدريجي</button><button data-k="slide">انزلاق للأسفل</button><button data-k="zoom">تصغير</button><button data-k="scatter">تطاير الكلمات</button><button data-k="blur">ذوبان في الضباب</button><button data-k="none">بدون</button></div>
         <div class="fr"><label for="autoPlay">تشغيل العرض بعد الترجمة</label><span class="sw"><input type="checkbox" id="autoPlay"><span></span></span></div>
       </div>
       <div class="box">
-        <h3><span class="i3d" data-i="cc"></span>الشريط العائم و VR</h3>
+        <h3><span class="i3d" data-i="layers" data-h="emerald"></span>الطبقات</h3>
+        <div class="fr"><label for="layersOn">فصل المهمة والخيارات عن الحوار<small>المهمة الحالية وخيارات الرد تبقى ظاهرة في مكانها بينما يُعرض الحوار سطراً بعد سطر</small></label><span class="sw"><input type="checkbox" id="layersOn"><span></span></span></div>
+        <div class="fr"><label for="subPos">مكان الحوار</label><select id="subPos"><option value="bottom">أسفل</option><option value="center">وسط</option><option value="top">أعلى</option></select></div>
+        <div class="fr"><label for="questPos">مكان المهمة</label><select id="questPos"><option value="tr">أعلى اليمين</option><option value="tl">أعلى اليسار</option><option value="tc">أعلى الوسط</option></select></div>
+        <div class="fr"><label for="choicePos">مكان الخيارات</label><select id="choicePos"><option value="r">يمين الوسط</option><option value="l">يسار الوسط</option></select></div>
+      </div>
+      <div class="box">
+        <h3><span class="i3d" data-i="cc" data-h="violet"></span>الشريط العائم و VR</h3>
         <div class="fr"><label for="floatOn">إظهار الشريط العائم<small>يعرض السطر الحالي ويمكن سحبه</small></label><span class="sw"><input type="checkbox" id="floatOn"><span></span></span></div>
         <div class="fr"><label for="floatW">عرض الشريط</label><input type="range" id="floatW" min="40" max="100" step="5"><span class="val" id="floatWV"></span></div>
         <div class="fr"><span class="lb">موضع الشريط</span><button class="tb" id="floatReset">إرجاعه للأسفل</button></div>
@@ -746,7 +861,10 @@ const STYLES={
 const MEANING="Translate the meaning, not word for word: adapt idioms, slang, jokes, insults and wordplay to their natural equivalent; keep each character's voice and tone; read all lines together as one scene so pronouns, gender and context stay consistent.";
 const TYPES={dialogue:["msg","حوار"],choice:["list","خيارات"],quest:["target","مهمة"],menu:["menu","قائمة"],item:["box","عنصر"],hint:["info","تلميح"],system:["alert","رسالة"],other:["type","نص"]};
 const CHUNK_LIMIT=3000,MAX_INPUT=30000,HISTORY_MAX=150,CACHE_MAX_ENTRIES=300,CACHE_MAX_CHARS=1500000,MAX_IMG=20*1024*1024;
-const DEFAULTS={theme:"gold",subFont:"Cairo",subSize:28,subColor:"#ffffff",subBg:"glass",subBgA:60,subPos:"bottom",subAnim:"rise",subExit:"scatter",
+const TEMPLATES={"cinema": {"name": "سينمائي", "desc": "حروف بيضاء بحدّ أسود بدون صندوق، مثل ترجمة الأفلام", "subFont": "IBM Plex Sans Arabic", "subSize": 30, "subColor": "#ffffff", "subBgC": "#000000", "subBgA": 10, "subBg": "edge", "textFx": "outline", "accent": "#f6dca0", "subAnim": "fade", "subExit": "fade"}, "dialogue": {"name": "صندوق حوار", "desc": "بطاقة زجاجية بحافة ذهبية واسم المتحدث فوق الكلام", "subFont": "IBM Plex Sans Arabic", "subSize": 26, "subColor": "#ffffff", "subBgC": "#0a0e1f", "subBgA": 80, "subBg": "card", "textFx": "shadow", "accent": "#e7b964", "subAnim": "rise", "subExit": "fade"}, "hud": {"name": "واجهة تقنية", "desc": "شريط داكن بلون سماوي، يظهر النص كأنه يُكتب", "subFont": "Readex Pro", "subSize": 25, "subColor": "#e8fbff", "subBgC": "#03121a", "subBgA": 78, "subBg": "card", "textFx": "glow", "accent": "#5ce1e6", "subAnim": "type", "subExit": "fade"}, "tv": {"name": "تلفزيون", "desc": "خط كبير وتباين عالٍ يُقرأ من الكنبة على شاشة بعيدة", "subFont": "Readex Pro", "subSize": 42, "subColor": "#ffffff", "subBgC": "#000000", "subBgA": 86, "subBg": "bar", "textFx": "outline", "accent": "#ffd45e", "subAnim": "fade", "subExit": "fade"}, "minimal": {"name": "بسيط", "desc": "صغير وشفاف لا يغطي اللعبة", "subFont": "Tajawal", "subSize": 22, "subColor": "#f4f4f6", "subBgC": "#000000", "subBgA": 42, "subBg": "glass", "textFx": "shadow", "accent": "#c9d0ea", "subAnim": "fade", "subExit": "fade"}, "classic": {"name": "كلاسيكي", "desc": "خط نسخ بلون الرقّ، لألعاب القصص والخيال", "subFont": "Noto Naskh Arabic", "subSize": 28, "subColor": "#fff1d2", "subBgC": "#1b1209", "subBgA": 84, "subBg": "card", "textFx": "shadow", "accent": "#d9a441", "subAnim": "zoom", "subExit": "fade"}, "bubble": {"name": "فقاعة", "desc": "فقاعة حوار بيضاء بنص داكن مثل القصص المصوّرة", "subFont": "Cairo", "subSize": 25, "subColor": "#121212", "subBgC": "#ffffff", "subBgA": 94, "subBg": "bubble", "textFx": "none", "accent": "#e4572e", "subAnim": "zoom", "subExit": "zoom"}, "neon": {"name": "نيون", "desc": "حروف متوهّجة بلون وردي لألعاب الأكشن والسباق", "subFont": "Alexandria", "subSize": 28, "subColor": "#ffffff", "subBgC": "#0b0216", "subBgA": 10, "subBg": "edge", "textFx": "glow", "accent": "#ff4fd8", "subAnim": "glow", "subExit": "fade"}};
+const FONTS=[["IBM Plex Sans Arabic","بلكس"],["Readex Pro","ريدكس"],["Tajawal","تجوال"],["Cairo","القاهرة"],["Alexandria","الإسكندرية"],["Noto Naskh Arabic","نسخ"]];
+const DEFAULTS={theme:"gold",subFont:"IBM Plex Sans Arabic",subSize:28,subColor:"#ffffff",subBg:"card",subBgA:80,subBgC:"#0a0e1f",subPos:"bottom",subAnim:"rise",subExit:"fade",
+  textFx:"shadow",accent:"#e7b964",tpl:"dialogue",layersOn:true,questPos:"tr",choicePos:"r",
   autoPlay:true,floatOn:false,floatW:70,floatX:null,floatY:null,vrDepth:12,tStyle:"gaming",ocrTier:"quick",autoTr:true,autoFlip:true,
   voiceSrc:"auto",voice:"buttery",rate:1,introOn:true,fxDust:true,fxGrain:true,fxCalm:false,speed:1,mode:"shot",showOrig:true,overlay:true};
 
@@ -767,16 +885,29 @@ function stamp(){const d=new Date(),p=n=>String(n).padStart(2,"0");return `${d.g
 function hash(s){let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return (h>>>0).toString(36)}
 ["ag_cache_v1","ag_cache_v2","ag_ov","ag_ov2"].forEach(k=>store.del(k));
 
-/* ============ 3D icons: stacked extrusion layers ============ */
+/* ============ 3D icons: layered tiles (same design as the desktop app) ============ */
+const HUES={gold:["#FFE7B0","#E7B964","#A8701F","#6B4310"],cyan:["#B8F6FF","#41C7E0","#147C9C","#0A4A60"],violet:["#E2CCFF","#9B6BF2","#5A2FC0","#371A7A"],
+  emerald:["#BFF7DA","#3FCF8E","#16875A","#0B5236"],coral:["#FFD0BF","#FF8466","#C8462B","#7E2714"],rose:["#FFC9EB","#F062B8","#A8287A","#66124A"],
+  blue:["#C8DAFF","#5C8BFF","#2A50C8","#16307E"],slate:["#E6E9F5","#8F98BE","#4E5679","#2C3250"]};
+const HUE_OF={lang:"cyan",clap:"rose",book:"violet",hist:"emerald",set:"slate",scan:"cyan",type:"blue",pad:"gold",cam:"gold",msg:"violet",
+  film:"rose",spark:"coral",cc:"violet",list:"cyan",target:"coral",menu:"slate",box:"emerald",info:"slate",alert:"coral",vr:"violet",tpl:"gold"};
+let tileN=0;
+function tile3D(name,hue){const [lt,mid,dk,side]=HUES[hue]||HUES.gold;const u="t"+(++tileN);
+  const gl=`<g transform="translate(10.5 9) scale(1.125)"><use href="#i-${name}" width="24" height="24"/></g>`;
+  return `<svg viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="f${u}" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="${lt}"/><stop offset=".55" stop-color="${mid}"/><stop offset="1" stop-color="${dk}"/></linearGradient>`+
+   `<linearGradient id="s${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>`+
+   `<linearGradient id="g${u}" gradientUnits="userSpaceOnUse" x1="0" y1="3" x2="0" y2="21"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="${lt}"/></linearGradient></defs>`+
+   `<ellipse cx="24" cy="44.2" rx="16" ry="2.6" fill="#000" fill-opacity=".38"/><rect x="5" y="7.5" width="38" height="35" rx="11" fill="${side}"/>`+
+   `<rect x="5" y="4" width="38" height="35" rx="11" fill="url(#f${u})"/>`+
+   `<path d="M16 4.6h16a10.4 10.4 0 0 1 10.4 10.4v1.6C36 19.6 12 19.6 5.6 16.6V15A10.4 10.4 0 0 1 16 4.6z" fill="url(#s${u})"/>`+
+   `<rect x="5.6" y="4.6" width="36.8" height="33.8" rx="10.4" fill="none" stroke="#fff" stroke-opacity=".45" stroke-width=".9"/>`+
+   `<g fill="none" stroke="${side}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".85"><g transform="translate(0 1.9)">${gl}</g><g transform="translate(0 1)">${gl}</g></g>`+
+   `<g fill="none" stroke="url(#g${u})" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">${gl}</g></svg>`}
 function build3D(root){
   (root||document).querySelectorAll(".i3d[data-i]:not([data-built])").forEach(el=>{
-    const n=+el.dataset.l||5,name=el.dataset.i;let html="";
-    for(let z=0;z<n;z++){const pct=Math.round(28+z*(60/Math.max(1,n-1)));
-      html+=`<svg viewBox="0 0 24 24" style="transform:translateZ(${(z-n+1)*.9}px);stroke:color-mix(in srgb,var(--ib) ${pct}%,#000)"><use href="#i-${name}"/></svg>`}
-    el.innerHTML=html;el.dataset.built="1";el.setAttribute("aria-hidden","true");
-  });
+    const name=el.dataset.i;el.innerHTML=tile3D(name,el.dataset.h||HUE_OF[name]||"gold");el.dataset.built="1";el.setAttribute("aria-hidden","true")});
 }
-const i3d=(name,cls,l)=>`<span class="i3d ${cls||""}" data-i="${name}" data-l="${l||4}"></span>`;
+const i3d=(name,cls,l)=>`<span class="i3d ${cls||""}" data-i="${name}"></span>`;
 build3D();
 
 /* ============ settings ============ */
@@ -788,6 +919,12 @@ if(S.tStyle==="literal")S.tStyle="close";if(!STYLES[S.tStyle])S.tStyle="gaming";
 if(![0.75,1,1.5].includes(+S.speed))S.speed=1;
 if(!["auto","claude","device"].includes(S.voiceSrc))S.voiceSrc="auto";
 if(!["shot","text"].includes(S.mode))S.mode="shot";
+if(!FONTS.some(f=>f[0]===S.subFont))S.subFont=DEFAULTS.subFont;
+if(S.subBg==="solid")S.subBg="card";if(!["glass","card","bar","bubble","edge"].includes(S.subBg))S.subBg="card";
+if(!["shadow","outline","glow","none"].includes(S.textFx))S.textFx="shadow";
+if(!/^#[0-9a-f]{6}$/i.test(S.subBgC||""))S.subBgC=DEFAULTS.subBgC;if(!/^#[0-9a-f]{6}$/i.test(S.accent||""))S.accent=DEFAULTS.accent;
+if(S.subColor==="accent")S.subColor="#f6dca0";
+if(!["tr","tl","tc"].includes(S.questPos))S.questPos="tr";if(!["r","l"].includes(S.choicePos))S.choicePos="r";
 
 /* ============ toast / modal ============ */
 function toast(msg,err){
@@ -845,20 +982,44 @@ const dust=(function(){
 
 /* ============ apply settings ============ */
 const ALL_SUBS=()=>[$("sub"),$("subL"),$("subR"),$("miniSub")];
+const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)).join(",");
+const LOOK_KEYS=["subFont","subSize","subColor","subBg","subBgA","subBgC","textFx","accent","subAnim","subExit"];
+function applyTemplate(id){const t=TEMPLATES[id];if(!t)return;LOOK_KEYS.forEach(k=>{if(k in t)S[k]=t[k]});S.tpl=id;applyAll();miniLoop(true);toast(`طُبّق قالب «${t.name}»`)}
+function renderTpls(){const box=$("tpls");box.innerHTML="";for(const [id,t] of Object.entries(TEMPLATES)){
+  const b=document.createElement("button");b.className="tpl";b.dataset.id=id;
+  b.innerHTML=`<span class="ts"><span class="sub" data-bg="${t.subBg}" data-fx="${t.textFx}" style="--sub-font:'${t.subFont}',sans-serif;--sub-color:${t.subColor};--sub-bgc:${rgb(t.subBgC)};--sub-bga:${(t.subBgA/100).toFixed(2)};--sub-acc:${t.accent};font-family:'${t.subFont}',sans-serif;color:${t.subColor}">سننطلق عند الفجر. أحضر سيفك.</span></span><b></b><small></small>`;
+  b.querySelector("b").textContent=t.name;b.querySelector("small").textContent=t.desc;b.onclick=()=>applyTemplate(id);box.appendChild(b)}}
+function renderFonts(){const box=$("fontPick");box.innerHTML="";for(const [f,ar] of FONTS){const b=document.createElement("button");b.dataset.f=f;
+  b.innerHTML=`<b style="font-family:'${f}',sans-serif">عرّب لعبتك</b><small></small>`;b.querySelector("small").textContent=ar;
+  b.onclick=()=>{S.subFont=f;S.tpl="custom";applyAll();miniLoop(true)};box.appendChild(b)}}
+renderTpls();renderFonts();build3D();
+function renderLayers(lines){const q=[],c=[],rest=[];for(const l of lines){if(/^المهمة\s*[:：]/.test(l))q.push(l.replace(/^المهمة\s*[:：]\s*/,""));else if(/^◆/.test(l))c.push(l.replace(/^◆\s*/,""));else rest.push(l)}
+  const on=S.layersOn&&matchMedia("(min-width:640px)").matches&&rest.length>0&&(q.length||c.length);const lq=$("lyQuest"),lc=$("lyChoice");
+  if(on&&q.length){lq.innerHTML='<span class="lh">◆ المهمة</span>';const sp=document.createElement("span");sp.textContent=q.join(" — ");lq.appendChild(sp);lq.classList.add("on")}else lq.classList.remove("on");
+  if(on&&c.length){lc.innerHTML="";const ol=document.createElement("ol");c.forEach(x=>{const li=document.createElement("li");li.textContent=x;ol.appendChild(li)});lc.appendChild(ol);lc.classList.add("on")}else lc.classList.remove("on");
+  return on?rest:lines}
 function applyAll(){
   const R=document.documentElement;R.dataset.theme=S.theme;
   R.style.setProperty("--sub-font",`"${S.subFont}",sans-serif`);
   R.style.setProperty("--sub-size",S.subSize+"px");
-  R.style.setProperty("--sub-color",S.subColor==="accent"?"var(--acc2)":S.subColor);
+  R.style.setProperty("--sub-color",S.subColor);R.style.setProperty("--sub-bgc",rgb(S.subBgC));R.style.setProperty("--sub-acc",S.accent);
   R.style.setProperty("--sub-bga",(S.subBgA/100).toFixed(2));
   R.style.setProperty("--vr-d",S.vrDepth+"px");
   document.body.classList.toggle("no-grain",!S.fxGrain);document.body.classList.toggle("no-dust",!S.fxDust);document.body.classList.toggle("calm",!!S.fxCalm);
   document.body.classList.toggle("hide-orig",!S.showOrig);$("tglOrig").classList.toggle("on",S.showOrig);
-  ALL_SUBS().forEach(el=>el.dataset.bg=S.subBg);
+  ALL_SUBS().forEach(el=>{el.dataset.bg=S.subBg;el.dataset.fx=S.textFx});
+  document.querySelectorAll(".layer").forEach(el=>{el.dataset.bg=S.subBg;el.dataset.fx=S.textFx});
+  ["lyQuest","miniQuest"].forEach(id=>$(id).dataset.pos=S.questPos);["lyChoice","miniChoice"].forEach(id=>$(id).dataset.pos=S.choicePos);
+  $("miniQuest").hidden=$("miniChoice").hidden=!S.layersOn;$("layersOn").checked=S.layersOn;$("questPos").value=S.questPos;$("choicePos").value=S.choicePos;
+  document.querySelectorAll(".chips[data-key]").forEach(c=>c.querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.k===S[c.dataset.key])));
+  document.querySelectorAll("#tpls .tpl").forEach(b=>b.classList.toggle("on",b.dataset.id===S.tpl));
+  document.querySelectorAll("#fontPick button").forEach(b=>b.classList.toggle("on",b.dataset.f===S.subFont));
+  document.querySelectorAll("#subAcc button").forEach(b=>b.classList.toggle("on",b.dataset.c===S.accent));
+  document.querySelectorAll("#subBgCol button").forEach(b=>b.classList.toggle("on",b.dataset.c===S.subBgC));
   ["subwrap","miniWrap"].forEach(id=>$(id).dataset.pos=S.subPos);document.querySelectorAll(".eye").forEach(e=>e.dataset.pos=S.subPos);
-  $("subFont").value=S.subFont;$("subSize").value=S.subSize;$("subSizeV").textContent=S.subSize+"px";
-  $("subBg").value=S.subBg;$("subBgA").value=S.subBgA;$("subBgAV").textContent=S.subBgA+"%";$("subBgA").disabled=S.subBg==="edge";
-  $("subPos").value=S.subPos;$("subAnim").value=S.subAnim;$("subExit").value=S.subExit;
+  $("subSize").value=S.subSize;$("subSizeV").textContent=S.subSize+"px";
+  $("subBgA").value=S.subBgA;$("subBgAV").textContent=S.subBgA+"%";$("subBgA").disabled=S.subBg==="edge";$("subBgCol").style.opacity=S.subBg==="edge"?.4:1;
+  $("subPos").value=S.subPos;
   $("autoPlay").checked=S.autoPlay;$("floatOn").checked=S.floatOn;$("floatW").value=S.floatW;$("floatWV").textContent=S.floatW+"%";
   $("vrDepth").value=S.vrDepth;$("vrDepthV").textContent=S.vrDepth+"px";
   $("tStyle").value=S.tStyle;$("ocrTier").value=S.ocrTier;$("autoTr").checked=S.autoTr;$("autoFlip").checked=S.autoFlip;
@@ -872,12 +1033,17 @@ function applyAll(){
   $("tglOverlay").classList.toggle("on",S.overlay);$("shot").classList.toggle("orig",!S.overlay);
   floatShow(S.floatOn);dust.start();saveS();
 }
-const bindSel=(id,key)=>$(id).addEventListener("change",e=>{S[key]=e.target.value;applyAll();if(["subAnim","subExit","subFont","subPos","subBg"].includes(key))miniLoop(true)});
+const bindSel=(id,key)=>$(id).addEventListener("change",e=>{S[key]=e.target.value;applyAll();if(["subPos"].includes(key))miniLoop(true)});
+document.querySelectorAll(".chips[data-key]").forEach(c=>c.querySelectorAll("button").forEach(b=>b.onclick=()=>{S[c.dataset.key]=b.dataset.k;if(LOOK_KEYS.includes(c.dataset.key))S.tpl="custom";applyAll();miniLoop(true)}));
+document.querySelectorAll("#subAcc button").forEach(b=>b.onclick=()=>{S.accent=b.dataset.c;S.tpl="custom";applyAll()});
+document.querySelectorAll("#subBgCol button").forEach(b=>b.onclick=()=>{S.subBgC=b.dataset.c;S.tpl="custom";applyAll()});
+$("layersOn").addEventListener("change",e=>{S.layersOn=e.target.checked;applyAll();loadPlayer($("output").value,true)});
+["questPos","choicePos"].forEach(k=>$(k).addEventListener("change",e=>{S[k]=e.target.value;applyAll()}));
 const bindChk=(id,key)=>$(id).addEventListener("change",e=>{S[key]=e.target.checked;applyAll()});
-["subFont","subBg","subPos","subAnim","subExit","tStyle","ocrTier","voice","voiceSrc"].forEach(k=>bindSel(k,k));
+["subPos","tStyle","ocrTier","voice","voiceSrc"].forEach(k=>bindSel(k,k));
 ["autoPlay","floatOn","autoTr","autoFlip","introOn","fxDust","fxGrain","fxCalm"].forEach(k=>bindChk(k,k));
-[["subSize","subSize"],["rate","rate"],["floatW","floatW"],["subBgA","subBgA"],["vrDepth","vrDepth"]].forEach(([id,k])=>$(id).addEventListener("input",e=>{S[k]=+e.target.value;applyAll()}));
-document.querySelectorAll("#subColor button").forEach(b=>b.onclick=()=>{S.subColor=b.dataset.c;applyAll()});
+[["subSize","subSize"],["rate","rate"],["floatW","floatW"],["subBgA","subBgA"],["vrDepth","vrDepth"]].forEach(([id,k])=>$(id).addEventListener("input",e=>{S[k]=+e.target.value;if(["subSize","subBgA"].includes(k))S.tpl="custom";applyAll()}));
+document.querySelectorAll("#subColor button").forEach(b=>b.onclick=()=>{S.subColor=b.dataset.c;S.tpl="custom";applyAll()});
 document.querySelectorAll("#themeSw button").forEach(b=>b.onclick=()=>{S.theme=b.dataset.t;applyAll()});
 document.querySelectorAll("#speedSeg button").forEach(b=>b.onclick=()=>{S.speed=+b.dataset.s;applyAll();if(player.playing)player.schedule()});
 $("tglOrig").onclick=()=>{S.showOrig=!S.showOrig;applyAll()};
@@ -1341,26 +1507,27 @@ function toLines(text){const out=[];
     for(const p of parts){if((buf+p).length>110&&buf){out.push(buf.trim());buf=p}else buf+=p}if(buf.trim())out.push(buf.trim())}
   return out}
 const calm=()=>reduceMotion||S.fxCalm;
+const dirOf=t=>{const m=(t||"").match(/[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF]|[\u0590-\u08FF\uFB1D-\uFEFC]/);return m&&/[\u0590-\u08FF\uFB1D-\uFEFC]/.test(m[0])?"rtl":m?"ltr":"auto"};
 function renderSub(el,text,anim){
-  clearInterval(el._t);el.className="sub";el.style.removeProperty("animation");
+  clearInterval(el._t);el.className="sub";el.style.removeProperty("animation");el.dir=dirOf(text);
   if(anim==="none"||(calm()&&anim!=="fade")){el.textContent=text;return}
   if(anim==="type"){el.textContent="";el.classList.add("caret");const ch=[...text];let i=0;const step=Math.max(14,Math.min(45,1400/ch.length))/S.speed;
     el._t=setInterval(()=>{el.textContent=ch.slice(0,++i).join("");if(i>=ch.length){clearInterval(el._t);el.classList.remove("caret")}},step);return}
-  if(anim==="fade"){el.textContent=text;void el.offsetWidth;el.classList.add("anim-fade");return}
+  if(anim==="fade"||anim==="zoom"||anim==="glow"){el.textContent=text;void el.offsetWidth;el.classList.add("anim-"+anim);return}
   el.textContent="";el.classList.add(anim==="blur"?"anim-blur":"anim-rise");const words=text.split(/(\s+)/);let k=0;const gap=Math.min(90,1100/Math.max(1,words.length/2))/S.speed;
   for(const w of words){if(/^\s+$/.test(w)){el.appendChild(document.createTextNode(w));continue}
     const sp=document.createElement("span");sp.className="w";sp.textContent=w;sp.style.animationDelay=(k++*gap)+"ms";el.appendChild(sp)}
 }
 function exitSub(el,kind){
   clearInterval(el._t);if(!el.textContent.trim())return;
-  el.classList.remove("anim-rise","anim-blur","anim-fade","caret");
+  el.classList.remove("anim-rise","anim-blur","anim-fade","anim-zoom","anim-glow","caret");
   if(kind==="scatter"){
     if(!el.querySelector(".w")){const t=el.textContent;el.textContent="";for(const w of t.split(/(\s+)/)){if(/^\s+$/.test(w)){el.appendChild(document.createTextNode(w));continue}const s=document.createElement("span");s.className="w";s.textContent=w;el.appendChild(s)}}
     el.querySelectorAll(".w").forEach(w=>{w.style.animationDelay=Math.random()*90+"ms";w.style.setProperty("--dx",(Math.random()*160-80)+"px");w.style.setProperty("--dy",(Math.random()*-90-20)+"px");w.style.setProperty("--rot",(Math.random()*70-35)+"deg")});
   }
   void el.offsetWidth;el.classList.add("ex-"+kind);
 }
-const EXIT_MS={fade:320,blur:380,slide:380,scatter:560};
+const EXIT_MS={fade:320,blur:380,slide:380,scatter:560,zoom:340};
 async function swapSub(els,text,tokenRef,myTok){
   const kind=S.subExit;
   if(kind!=="none"&&!calm()&&els.some(e=>e.textContent.trim())){els.forEach(e=>exitSub(e,kind));await wait(EXIT_MS[kind]||320);if(tokenRef()!==myTok)return false}
@@ -1378,7 +1545,7 @@ const player={lines:[],i:0,playing:false,ended:false,t:0,tok:0,
   stop(){this.pause();this.els().forEach(e=>clearInterval(e._t))},
   ui(){$("pPlay").innerHTML=ico(this.playing?"pause":"play");$("pPlay").setAttribute("aria-label",this.playing?"إيقاف مؤقت":"تشغيل");
     $("cinema").classList.toggle("idle",!this.lines.length);$("hudtxt").textContent=this.playing?"يُعرض الآن":(this.lines.length?"جاهز للعرض":"في الانتظار")}};
-function loadPlayer(text,keep){const prev=player.i;player.stop();player.lines=toLines(text||"");player.ended=false;const has=player.lines.length>0;$("pPlay").disabled=!has;
+function loadPlayer(text,keep){const prev=player.i;player.stop();player.lines=renderLayers(toLines(text||""));player.ended=false;const has=player.lines.length>0;$("pPlay").disabled=!has;
   if(!has){player.tok++;player.els().forEach(e=>{e.className="sub";e.textContent=""});subEl.textContent="ترجمتك ستظهر هنا";$("pInfo").textContent="0 / 0";$("pPrev").disabled=$("pNext").disabled=true;$("fText").textContent="عرب لعبتك";player.ui();return}
   player.show(keep?Math.min(prev,player.lines.length-1):0);player.ui()}
 $("pPlay").onclick=()=>player.playing?player.pause():player.play();

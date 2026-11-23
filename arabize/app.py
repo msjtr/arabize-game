@@ -12,12 +12,16 @@ from .capture import Capturer
 from .config import APP_NAME_AR, Settings
 from .engines import Manager
 from .hotkeys import Hotkeys
-from .overlay import SubtitleOverlay
+from . import styles
+from .overlay import OverlayLayers
 from .pipeline import LiveTranslator
 from .platform_utils import IS_WIN, foreground_exe
 from .screens import RegionSelector, qscreen_for
 from .ui import icons, theme
 from .vr import VRError, VRSubtitle
+
+
+SAMPLE_ITEMS = styles.SAMPLE_ITEMS
 
 
 class Controller(QObject):
@@ -38,7 +42,7 @@ class Controller(QObject):
         self.store = store or Store()
         self.manager = Manager(self.settings, self.store)
         self.worker: LiveTranslator | None = None
-        self.overlay = SubtitleOverlay()
+        self.overlay = OverlayLayers()
         self.overlay.moved.connect(self._overlay_moved)
         self.vr = VRSubtitle()
         self.overlay_hidden = False
@@ -138,8 +142,7 @@ class Controller(QObject):
             return
         self.overlay.show_items(items)
         if self.worker:
-            rect = self.overlay.physical_rect()
-            self.worker.set_exclusions([rect] if rect and not self.overlay.excluded else [])
+            self.worker.set_exclusions(self.overlay.physical_rects())
 
     # ------------------------------------------------------------------ display
     def apply_display(self):
@@ -166,15 +169,77 @@ class Controller(QObject):
                 self._show(self.last_items)
             self.toast("ظهرت الترجمة")
 
-    def edit_overlay_position(self):
+    def edit_overlay_position(self, layer: str = "dialogue"):
         if self.prof["display"]["mode"] != "screen":
             self.toast("التحريك بالماوس متاح في وضع الشاشة", err=True); return
-        self.overlay.set_edit_mode(True)
+        self.overlay.set_edit_mode(True, layer)
 
-    def _overlay_moved(self, pos):
-        self.settings.update_profile("display.screen.custom_pos", pos)
-        self.toast("حُفظ مكان الترجمة لهذه اللعبة")
+    def _overlay_moved(self, layer, pos):
+        if layer == "dialogue":
+            self.settings.update_profile("display.screen.custom_pos", pos)
+        else:
+            self.settings.update_profile(f"display.screen.layers.{layer}.custom_pos", pos)
+        self.toast("حُفظ مكان الطبقة لهذه اللعبة")
+        self.apply_display()
         self.profile_changed.emit()
+
+    # ------------------------------------------------------------------ templates
+    def templates(self) -> dict:
+        return styles.all_templates(self.settings.get("templates", {}))
+
+    def apply_template(self, tid: str) -> bool:
+        t = self.templates().get(tid)
+        if not t:
+            return False
+        disp = self.prof["display"]
+        self.settings.update_profile("display.screen", {**styles.apply_template(disp["screen"], t["look"]), "template": tid})
+        self.settings.update_profile("display.vr", styles.vr_from_look(disp["vr"], t["look"]))
+        self.apply_display()
+        self.profile_changed.emit()
+        if self.overlay.isVisible() or self.running:
+            self._show(self.last_items or [])
+        return True
+
+    def save_template(self, name: str, desc: str = "") -> str:
+        tid = styles.new_template_id(name)
+        custom = dict(self.settings.get("templates", {}) or {})
+        custom[tid] = {"name": name.strip()[:40] or "قالبي", "desc": desc.strip()[:120],
+                       "look": styles.look_of(self.prof["display"]["screen"])}
+        self.settings.set("templates", custom)
+        self.settings.update_profile("display.screen.template", tid)
+        self.profile_changed.emit()
+        return tid
+
+    def delete_template(self, tid: str) -> bool:
+        custom = dict(self.settings.get("templates", {}) or {})
+        if tid not in custom:
+            return False
+        del custom[tid]
+        self.settings.set("templates", custom)
+        if self.prof["display"]["screen"].get("template") == tid:
+            self.settings.update_profile("display.screen.template", "custom")
+        self.profile_changed.emit()
+        return True
+
+    def import_templates(self, text: str) -> int:
+        new = styles.import_templates(text)
+        custom = dict(self.settings.get("templates", {}) or {}); custom.update(new)
+        self.settings.set("templates", custom)
+        self.profile_changed.emit()
+        return len(new)
+
+    def export_templates(self) -> str:
+        return styles.export_templates(self.settings.get("templates", {}) or {})
+
+    def preview_effect(self):
+        """Replay the entrance effect on screen with sample text so the user sees the template in the real game."""
+        if self.prof["display"]["mode"] != "screen":
+            return
+        sample = self.last_items or SAMPLE_ITEMS
+        self.overlay._last = {}
+        self.overlay.show_items(sample)
+        if not self.running:
+            QTimer.singleShot(4200, lambda: (not self.running) and self.overlay.clear())
 
     # ------------------------------------------------------------------ modes / VR
     def set_mode(self, mode: str):
