@@ -140,6 +140,33 @@ async def main():
             await pg.wait_for_function("document.querySelectorAll('.bk.choice li').length>0", timeout=120000)
             await pg.wait_for_timeout(500)
             print(name, "choices:", await pg.evaluate("[...document.querySelectorAll('.bk.choice li .og')].map(x=>x.textContent)"))
+            # --- live mode: a fake "shared screen" shows the dialogue scene, then the choices scene
+            if name == "desktop":
+                import base64
+                d1 = base64.b64encode(open("/tmp/game_dialogue.png", "rb").read()).decode()
+                d2 = base64.b64encode(open("/tmp/game_choices.png", "rb").read()).decode()
+                await pg.evaluate("""([a,b])=>{
+                  const cv=document.createElement('canvas');cv.width=1920;cv.height=1080;const x=cv.getContext('2d');
+                  const load=s=>new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.src='data:image/png;base64,'+s});
+                  window.__scenes=Promise.all([load(a),load(b)]);window.__show=async k=>{const im=(await window.__scenes)[k];x.drawImage(im,0,0)};
+                  setInterval(()=>{x.fillStyle='rgba(0,0,0,0.0)';x.fillRect(0,0,1,1)},200);
+                  window.__show(0);
+                  navigator.mediaDevices.getDisplayMedia=async()=>cv.captureStream(5);}""", [d1, d2])
+                await pg.click(".mode[data-m=live]")
+                await pg.click("#lvScreen")
+                await pg.wait_for_function("document.querySelectorAll('#lvLast li').length>=1", timeout=120000)
+                first = await pg.evaluate("document.querySelector('#lvLast li').textContent")
+                g0 = state["google"]
+                await pg.wait_for_timeout(3000)   # same screen: nothing new should be translated
+                same_ok = await pg.evaluate("document.querySelectorAll('#lvLast li').length") == 1 and state["google"] == g0
+                await pg.evaluate("window.__show(1)")
+                await pg.wait_for_function("document.querySelectorAll('#lvLast li').length>=2", timeout=120000)
+                second = await pg.evaluate("document.querySelector('#lvLast li').textContent")
+                print(name, "live 1st:", first[:90], "| unchanged screen re-translated:", not same_ok, "| 2nd:", second[:90])
+                ok &= "lighthouse" in first.lower() and same_ok and "leave me alone" in second.lower()
+                await pg.screenshot(path=f"/tmp/site-{name}-live.png")
+                await pg.click("#lvStop")
+                await pg.click(".mode[data-m=shot]")
             # --- appearance: 3D icons, fonts, templates
             fam = await pg.evaluate("document.fonts.check('700 20px \"Alexandria\"') && document.fonts.check('16px \"IBM Plex Sans Arabic\"')")
             tiles = await pg.evaluate("document.querySelectorAll('.i3d svg rect').length")

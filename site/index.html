@@ -116,7 +116,7 @@ main{max-width:1120px;margin:0 auto;padding:22px 20px calc(var(--ovh) + 48px)}
 .vh p{margin:0;color:var(--muted);font-size:14px;line-height:1.7}
 
 /* ============ mode switch ============ */
-.modes{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
 .mode{display:flex;align-items:center;gap:14px;text-align:start;padding:14px 16px;border-radius:18px;border:1px solid var(--line);background:rgba(255,255,255,.025);transition:border-color .25s,background .25s,transform .2s}
 .mode:hover{border-color:var(--line2);transform:translateY(-1px)}
 .mode .i3d{--s:40px;filter:saturate(.4) brightness(.8)}
@@ -368,6 +368,27 @@ body.hide-orig .bk .og{display:none}
   background:linear-gradient(135deg,var(--acc2),var(--acc))}
 @media (max-width:640px){.pcapp{flex-wrap:wrap}.pcapp a{width:100%;justify-content:center}}
 
+
+/* ============ live mode ============ */
+.lvstage{position:relative;border-radius:18px;overflow:hidden;border:1px solid var(--line2);background:#05060f;aspect-ratio:16/9;touch-action:none;user-select:none}
+.lvstage video{width:100%;height:100%;object-fit:contain;display:block}
+.lvstage.on{cursor:crosshair}
+.lvsel{position:absolute;border:2px dashed var(--acc);background:color-mix(in srgb,var(--acc) 8%,transparent);box-shadow:0 0 0 9999px rgba(0,0,0,.45);pointer-events:none;border-radius:6px}
+.lvempty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;padding:18px;
+  background:radial-gradient(70% 70% at 50% 40%,color-mix(in srgb,var(--acc) 10%,transparent),transparent)}
+.lvempty h3{margin:4px 0 0;font-family:var(--display);font-weight:500;font-size:20px}
+.lvempty p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.8;max-width:560px}
+.lvbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.lvbar .sp{flex:1}
+.lvbar .tb.danger{color:var(--err)}
+.lvhint{color:var(--muted);font-size:12.5px;line-height:1.7;margin:8px 2px 0}
+.lvlast{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px}
+.lvlast li{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:rgba(255,255,255,.025)}
+.lvlast li b{display:block;font-size:15px;line-height:1.7}
+.lvlast li small{display:block;color:var(--muted);direction:ltr;text-align:left;font-size:12px;margin-top:2px}
+.lvlast li .k{color:var(--acc);font-size:12px;font-weight:700}
+@media (max-width:600px){.lvstage{aspect-ratio:4/3}.lvempty h3{font-size:17px}.lvempty p{font-size:12.5px}.lvbar .tb{font-size:12px}}
+
 /* ============ settings / forms ============ */
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:14px}
 .box{background:rgba(255,255,255,.025);border:1px solid var(--line);border-radius:16px;padding:16px}
@@ -565,6 +586,34 @@ body.calm .aurora,body.calm .scene svg,body.calm .scene .sun,body.calm .go::befo
     <div class="modes" role="tablist" aria-label="طريقة الإدخال">
       <button class="mode on" data-m="shot" role="tab"><span class="i3d" data-i="scan" data-l="6"></span><span><b>لقطة من اللعبة</b><small>ارفع صورة الشاشة فيقرأ النص ويرتّب الحوار والمهمة والخيارات</small></span></button>
       <button class="mode" data-m="text" role="tab"><span class="i3d" data-i="type" data-l="6"></span><span><b>نص مكتوب</b><small>الصق الحوار أو ملف نصوص اللعبة</small></span></button>
+      <button class="mode" data-m="live" role="tab"><span class="i3d" data-i="monitor" data-h="emerald"></span><span><b>مباشر من الشاشة</b><small>يقرأ اللعبة أو أي شاشة أو كاميرا الجوال ويترجم تلقائياً</small></span></button>
+    </div>
+
+    <!-- live mode -->
+    <div id="m-live" hidden>
+      <div class="lvstage" id="lvStage">
+        <video id="lvVideo" muted playsinline></video>
+        <div class="lvsel" id="lvSel" hidden></div>
+        <div class="lvempty" id="lvEmpty">
+          <span class="i3d big" data-i="monitor" data-h="emerald"></span>
+          <h3>ترجمة مباشرة من أي شاشة</h3>
+          <p>شارك نافذة اللعبة أو الشاشة كاملة (ومنها التلفزيون المتصل بالكمبيوتر)، أو وجّه كاميرا الجوال إلى شاشة التلفزيون أو جهاز الألعاب. يقرأ الموقع النص كلما تغيّر ويترجمه فوراً.</p>
+          <div class="row">
+            <button class="btn" id="lvScreen"><svg class="ic sm"><use href="#i-monitor"/></svg>شارك الشاشة أو نافذة اللعبة</button>
+            <button class="btn ghost" id="lvCam"><svg class="ic sm"><use href="#i-cam"/></svg>كاميرا الجوال</button>
+          </div>
+        </div>
+      </div>
+      <div class="lvbar" id="lvBar" hidden>
+        <span class="chip" id="lvChip">جاهز</span>
+        <span class="sp"></span>
+        <button class="tb" id="lvRegion"><svg class="ic sm"><use href="#i-scan"/></svg>حدّد منطقة النص</button>
+        <button class="tb" id="lvFull"><svg class="ic sm"><use href="#i-max"/></svg>الشاشة كاملة</button>
+        <button class="tb" id="lvPip"><svg class="ic sm"><use href="#i-cc"/></svg>نافذة عائمة فوق اللعبة</button>
+        <button class="tb danger" id="lvStop"><svg class="ic sm"><use href="#i-sq"/></svg>إيقاف</button>
+      </div>
+      <p class="lvhint" id="lvHint" hidden>اسحب على الصورة لتحديد مكان الكلام فقط (صندوق الحوار مثلاً): القراءة تصبح أسرع وأدق. «النافذة العائمة» تبقى فوق اللعبة على Chrome وEdge في الكمبيوتر. للترجمة فوق اللعبة مباشرة بدون أي خطوة، استخدم برنامج الكمبيوتر.</p>
+      <ul class="lvlast" id="lvLast"></ul>
     </div>
 
     <!-- screenshot mode -->
@@ -918,7 +967,7 @@ S.subSize=num(S.subSize,16,56,28);S.floatW=num(S.floatW,40,100,70);S.rate=num(S.
 if(S.tStyle==="literal")S.tStyle="close";if(!STYLES[S.tStyle])S.tStyle="gaming";
 if(![0.75,1,1.5].includes(+S.speed))S.speed=1;
 if(!["auto","claude","device"].includes(S.voiceSrc))S.voiceSrc="auto";
-if(!["shot","text"].includes(S.mode))S.mode="shot";
+if(!["shot","text","live"].includes(S.mode))S.mode="shot";
 if(!FONTS.some(f=>f[0]===S.subFont))S.subFont=DEFAULTS.subFont;
 if(S.subBg==="solid")S.subBg="card";if(!["glass","card","bar","bubble","edge"].includes(S.subBg))S.subBg="card";
 if(!["shadow","outline","glow","none"].includes(S.textFx))S.textFx="shadow";
@@ -1053,7 +1102,7 @@ $("resetAll").onclick=()=>modal("الإعدادات الافتراضية","ست�
 
 /* ============ input mode ============ */
 function setMode(m){S.mode=m;saveS();document.querySelectorAll(".mode").forEach(b=>{const on=b.dataset.m===m;b.classList.toggle("on",on);b.setAttribute("aria-selected",on)});
-  $("m-shot").hidden=m!=="shot";$("m-text").hidden=m!=="text"}
+  $("m-shot").hidden=m!=="shot";$("m-text").hidden=m!=="text";$("m-live").hidden=m!=="live"}
 document.querySelectorAll(".mode").forEach(b=>b.onclick=()=>setMode(b.dataset.m));
 
 /* ============ languages + detection ============ */
@@ -1219,7 +1268,7 @@ const FREE={
     for(let i=0;i<d.length;i+=4){const g=(d[i]*77+d[i+1]*150+d[i+2]*29)>>8;d[i]=d[i+1]=d[i+2]=g;sum+=g}
     if(sum/(d.length/4)<128)for(let i=0;i<d.length;i+=4){d[i]=d[i+1]=d[i+2]=255-d[i]}
     x.putImageData(im,0,0);return c},
-  async readImage(blob,t,{signal,onProgress}={}){
+  async readImage(blob,t,{signal,onProgress,skipIf}={}){
     const lang=TESS[src.value]||"eng";
     const worker=await (await this._worker(lang,onProgress));
     if(signal&&signal.aborted)throw {code:"cancelled"};
@@ -1254,6 +1303,7 @@ const FREE={
       blocks.push({type:choice.has(gi)?"choice":quest?"quest":label?"dialogue":"other",speaker:quest?"":label,original:g.map(l=>l.text).join(" "),
         box:[x0/W*100,y0/H*100,(x1-x0)/W*100,(y1-y0)/H*100]})});
     if(!blocks.length)return {lang:null,scene:"",blocks:[]};
+    if(skipIf&&skipIf(blocks.map(b=>b.original).join("\n")))return {same:true,blocks:[]};   // live mode: same text as before, no translation request
     const terms=glossFor(blocks.map(b=>b.original).join(" "));
     const all=await this.translate(blocks.map(b=>b.original).join("\n"),src.value==="auto"?"auto":src.value,t,terms,signal);
     let parts=all.text.split("\n").map(x=>x.trim()).filter(Boolean);
@@ -1498,6 +1548,132 @@ $("save").onclick=async()=>{const t=$("output").value;if(!t)return toast("لا �
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+t],{type:"text/plain;charset=utf-8"}));
   a.download="arabize_translation.txt";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);toast("تم حفظ الملف")};
 $("clear").onclick=()=>{$("input").value="";$("output").value="";onInput();outCount();setProg(0);loadPlayer("");stopSpeech();setStatus("تم مسح النص.");$("input").focus()};
+
+
+/* ============ live: read the game / any screen / the phone camera, translate whenever the text changes ============ */
+async function readFrame(sample,blob,t,signal,skipIf){
+  const raw=await sample.readImage(blob,t,{signal,skipIf});if(raw&&raw.same)return raw;
+  return {lang:normLang(raw&&raw.lang),scene:"",blocks:cleanBlocks(raw)}}
+const LV={stream:null,timer:0,prev:null,changed:false,still:0,busy:false,seen:"",lines:[],region:store.get("ag_lvreg",null),kind:"",pip:null,pipCanvas:null,ctl:null,sel:false};
+const normKey=t=>(t||"").toLowerCase().replace(/[^\p{L}\p{N}]+/gu," ").trim();
+function similar(a,b){a=normKey(a);b=normKey(b);if(!a||!b)return a===b;if(a===b)return true;
+  const bg=s=>{const m=new Map();for(let i=0;i<s.length-1;i++){const k=s.slice(i,i+2);m.set(k,(m.get(k)||0)+1)}return m};
+  const A=bg(a),B=bg(b);let inter=0;for(const [k,n] of A)inter+=Math.min(n,B.get(k)||0);return 2*inter/Math.max(1,a.length-1+b.length-1)>=.9}
+function lvChip(txt,cls){const c=$("lvChip");c.className="chip "+(cls||"");c.innerHTML=cls==="live"?"<i></i><span></span>":"<span></span>";c.lastChild.textContent=txt}
+async function liveStart(kind){
+  if(LV.stream)liveStop(true);
+  try{
+    if(kind==="screen"){
+      if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia)
+        return modal("مشاركة الشاشة غير متاحة","متصفحات الجوال لا تسمح للمواقع بقراءة الشاشة. اختر «كاميرا الجوال» ووجّهها إلى شاشة اللعبة، أو افتح الموقع من الكمبيوتر على Chrome أو Edge، أو حمّل برنامج الكمبيوتر.");
+      LV.stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:5,max:10}},audio:false,selfBrowserSurface:"exclude",surfaceSwitching:"include",preferCurrentTab:false});
+    }else{
+      if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)return modal("الكاميرا غير متاحة","هذا المتصفح لا يسمح باستخدام الكاميرا في هذه الصفحة.");
+      LV.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1920},height:{ideal:1080}},audio:false});
+    }
+  }catch(e){
+    if(e&&e.name==="NotAllowedError")return toast(kind==="screen"?"لم تُمنح مشاركة الشاشة":"لم يُمنح إذن الكاميرا",true);
+    return modal("تعذّر بدء القراءة المباشرة",kind==="screen"?"هذه الصفحة لا تسمح بمشاركة الشاشة هنا. افتح الموقع العام msjtr.github.io/arabize-game على Chrome أو Edge في الكمبيوتر، أو استخدم برنامج الكمبيوتر.":"تعذّر فتح الكاميرا. اسمح للموقع باستخدامها من إعدادات المتصفح ثم أعد المحاولة.")}
+  LV.kind=kind;const v=$("lvVideo");v.srcObject=LV.stream;try{await v.play()}catch(e){}
+  LV.stream.getVideoTracks().forEach(tr=>tr.addEventListener("ended",()=>liveStop()));
+  $("lvEmpty").hidden=true;$("lvBar").hidden=false;$("lvHint").hidden=false;$("lvStage").classList.add("on");
+  LV.prev=null;LV.changed=true;LV.still=0;LV.seen="";drawSel();
+  clearInterval(LV.timer);LV.timer=setInterval(liveTick,kind==="cam"?800:600);
+  lvChip("يراقب الشاشة","live");setStatus("القراءة المباشرة تعمل: تُترجم النصوص كلما تغيّرت.","ok");
+}
+function liveStop(silent){
+  clearInterval(LV.timer);LV.timer=0;if(LV.ctl)LV.ctl.abort();
+  if(LV.stream)LV.stream.getTracks().forEach(t=>t.stop());LV.stream=null;$("lvVideo").srcObject=null;
+  $("lvEmpty").hidden=false;$("lvBar").hidden=true;$("lvHint").hidden=true;$("lvSel").hidden=true;$("lvStage").classList.remove("on");
+  if(!silent)setStatus("أُوقفت القراءة المباشرة.")}
+function videoBox(){const v=$("lvVideo"),r=v.getBoundingClientRect(),W=v.videoWidth||16,H=v.videoHeight||9;
+  const k=Math.min(r.width/W,r.height/H),w=W*k,h=H*k;return {x:r.left+(r.width-w)/2,y:r.top+(r.height-h)/2,w,h}}
+function drawSel(){const el=$("lvSel");if(!LV.region||!LV.stream){el.hidden=true;return}
+  const st=$("lvStage").getBoundingClientRect(),b=videoBox(),[x,y,w,h]=LV.region;el.hidden=false;
+  el.style.left=(b.x-st.left+x*b.w)+"px";el.style.top=(b.y-st.top+y*b.h)+"px";el.style.width=w*b.w+"px";el.style.height=h*b.h+"px"}
+addEventListener("resize",drawSel);$("lvVideo").addEventListener("loadedmetadata",drawSel);
+(()=>{const st=$("lvStage");let p0=null;
+  const pos=e=>{const b=videoBox();return [Math.min(1,Math.max(0,(e.clientX-b.x)/b.w)),Math.min(1,Math.max(0,(e.clientY-b.y)/b.h))]};
+  st.addEventListener("pointerdown",e=>{if(!LV.stream||e.target.closest("button"))return;p0=pos(e);st.setPointerCapture(e.pointerId)});
+  st.addEventListener("pointermove",e=>{if(!p0)return;const p=pos(e);LV.region=[Math.min(p0[0],p[0]),Math.min(p0[1],p[1]),Math.abs(p[0]-p0[0]),Math.abs(p[1]-p0[1])];drawSel()});
+  st.addEventListener("pointerup",()=>{if(!p0)return;p0=null;
+    if(!LV.region||LV.region[2]<.04||LV.region[3]<.03){LV.region=null;toast("اسحب مستطيلاً حول مكان الكلام")}
+    else toast("حُددت المنطقة: ستُقرأ هذه المنطقة فقط");
+    store.set("ag_lvreg",LV.region);drawSel();LV.prev=null;LV.changed=true;LV.seen=""})})();
+$("lvScreen").onclick=()=>liveStart("screen");
+$("lvCam").onclick=()=>liveStart("cam");
+$("lvStop").onclick=()=>liveStop();
+$("lvRegion").onclick=()=>toast("اسحب على الصورة حول صندوق الكلام في اللعبة");
+$("lvFull").onclick=()=>{LV.region=null;store.set("ag_lvreg",null);drawSel();LV.prev=null;LV.changed=true;LV.seen="";toast("ستُقرأ الشاشة كاملة")};
+function liveFrame(){const v=$("lvVideo"),W=v.videoWidth,H=v.videoHeight;if(!W||!H)return null;
+  const [x,y,w,h]=LV.region||[0,0,1,1],sw=Math.max(8,Math.round(w*W)),sh=Math.max(8,Math.round(h*H));
+  const c=document.createElement("canvas");c.width=sw;c.height=sh;c.getContext("2d").drawImage(v,Math.round(x*W),Math.round(y*H),sw,sh,0,0,sw,sh);return c}
+function grayThumb(c){const t=document.createElement("canvas");t.width=160;t.height=Math.max(1,Math.round(160*c.height/c.width));
+  const x=t.getContext("2d",{willReadFrequently:true});x.drawImage(c,0,0,t.width,t.height);const d=x.getImageData(0,0,t.width,t.height).data;
+  const g=new Uint8Array(d.length/4);for(let i=0;i<g.length;i++)g[i]=(d[i*4]*77+d[i*4+1]*150+d[i*4+2]*29)>>8;return g}
+async function liveTick(){
+  if(LV.busy||!LV.stream)return;const c=liveFrame();if(!c)return;const g=grayThumb(c);
+  let diff=255;if(LV.prev&&LV.prev.length===g.length){let s=0;for(let i=0;i<g.length;i++)s+=Math.abs(g[i]-LV.prev[i]);diff=s/g.length}
+  LV.prev=g;const sens=LV.kind==="cam"?7:2.5;
+  if(diff>sens){LV.changed=true;LV.still=0;return}        // still moving: wait until the text settles
+  if(!LV.changed)return;LV.changed=false;await liveRead(c)}
+async function liveRead(c){
+  LV.busy=true;lvChip("يقرأ النص…","live");const t0=performance.now();
+  try{
+    const sample=await getSample();if(!sample)throw {code:"capability_disabled"};
+    const blob=await new Promise(r=>c.toBlob(r,"image/png"));const t=tgt.value;LV.ctl=new AbortController();
+    const data=await readFrame(sample,blob,t,LV.ctl.signal,orig=>similar(orig,LV.seen));
+    if(!data||data.same){lvChip("لا نص جديد","live");return}
+    const blocks=data.blocks||[];const orig=blocks.map(b=>b.original).join("\n");
+    if(!blocks.length){lvChip("لا يوجد نص على الشاشة","live");return}
+    if(similar(orig,LV.seen)){lvChip("لا نص جديد","live");return}
+    LV.seen=orig;const lines=sceneToLines(blocks);LV.lines=lines;const text=lines.join("\n");
+    $("output").value=text;outCount();loadPlayer(text);player.play();pipUpdate();
+    const ul=$("lvLast");const li=document.createElement("li");
+    for(const b of blocks){const k=b.type==="quest"?"المهمة":b.type==="choice"?"خيار":(b.speaker_tr||b.speaker||"");
+      if(k){const s=document.createElement("span");s.className="k";s.textContent=k;li.appendChild(s)}
+      const bt=document.createElement("b");bt.textContent=b.translation||"";bt.dir=dirOf(bt.textContent);li.appendChild(bt);
+      const sm=document.createElement("small");sm.textContent=b.original;li.appendChild(sm)}
+    ul.prepend(li);while(ul.children.length>4)ul.lastChild.remove();
+    lvChip(`تُرجم في ${fmt(((performance.now()-t0)/1000).toFixed(1))} ث`,"live");
+    addHistory({time:stamp(),source:"قراءة مباشرة: "+blocks.map(b=>b.original).join(" | ").slice(0,600),translation:text,from:data.lang||"auto",to:t,style:S.tStyle,kind:"shot"});
+  }catch(e){const code=(e&&e.code)||"upstream_error";
+    if(code!=="cancelled"){lvChip(code==="rate_limited"?"الخدمة مشغولة، سيُعاد المحاولة":"تعذّرت القراءة، سيُعاد المحاولة","");LV.changed=true}
+  }finally{LV.busy=false;LV.ctl=null}}
+
+/* floating window above the game: Document Picture-in-Picture (Chrome/Edge), or a video picture-in-picture fallback */
+const PIP_CSS=`body{margin:0;background:#05060f;display:flex;align-items:center;justify-content:center;min-height:100vh;overflow:hidden}
+#p{font-weight:700;line-height:1.6;text-align:center;padding:10px 18px;white-space:pre-wrap}#p .q{display:block;font-size:.62em;opacity:.95}`;
+async function pipOpen(){
+  if(LV.pip&&!LV.pip.closed){LV.pip.focus&&LV.pip.focus();return}
+  if(window.documentPictureInPicture){
+    try{const w=await documentPictureInPicture.requestWindow({width:Math.round(Math.min(960,screen.availWidth*.6)),height:180});
+      LV.pip=w;const d=w.document;d.documentElement.dir="rtl";
+      document.querySelectorAll('link[rel=stylesheet]').forEach(l=>{const n=d.createElement("link");n.rel="stylesheet";n.href=l.href;d.head.appendChild(n)});
+      const st=d.createElement("style");st.textContent=PIP_CSS;d.head.appendChild(st);const p=d.createElement("div");p.id="p";d.body.appendChild(p);
+      w.addEventListener("pagehide",()=>{LV.pip=null});pipUpdate();toast("ضع النافذة العائمة فوق اللعبة؛ تبقى ظاهرة فوق كل النوافذ");return}catch(e){}
+  }
+  const v=document.createElement("video");
+  if(v.requestPictureInPicture&&document.pictureInPictureEnabled!==false&&HTMLCanvasElement.prototype.captureStream){
+    try{const cv=document.createElement("canvas");cv.width=1280;cv.height=220;LV.pipCanvas=cv;pipUpdate();
+      v.muted=true;v.srcObject=cv.captureStream(4);await v.play();await v.requestPictureInPicture();
+      LV.pipVideo=v;clearInterval(LV.pipT);LV.pipT=setInterval(pipUpdate,1000);
+      v.addEventListener("leavepictureinpicture",()=>{clearInterval(LV.pipT);LV.pipCanvas=null;LV.pipVideo=null});return}catch(e){LV.pipCanvas=null}
+  }
+  modal("النافذة العائمة غير مدعومة هنا","هذا المتصفح لا يدعم النوافذ العائمة. استخدم Chrome أو Edge على الكمبيوتر، أو «الشريط العائم» في هذه الصفحة، أو برنامج الكمبيوتر الذي يعرض الترجمة فوق اللعبة مباشرة.")}
+function pipUpdate(){
+  const lines=LV.lines.length?LV.lines:["الترجمة المباشرة ستظهر هنا"];
+  const quest=lines.filter(l=>/^المهمة\s*[:：]/.test(l)),main=lines.filter(l=>!/^المهمة\s*[:：]/.test(l)).slice(-3);
+  const col=S.subColor,bg=`rgba(${rgb(S.subBgC)},${Math.max(.75,S.subBgA/100)})`,font=`"${S.subFont}",sans-serif`;
+  if(LV.pip&&!LV.pip.closed){const d=LV.pip.document,p=d.getElementById("p");if(!p)return;d.body.style.background=bg;
+    p.style.fontFamily=font;p.style.color=col;p.style.fontSize=Math.max(18,Math.min(40,S.subSize))+"px";p.dir=dirOf(main.join(" "));p.textContent=main.join("\n");
+    if(quest.length){const q=d.createElement("span");q.className="q";q.style.color=S.accent;q.textContent=quest.join(" ");p.prepend(q)}}
+  const cv=LV.pipCanvas;if(cv){const x=cv.getContext("2d");x.fillStyle=bg;x.fillRect(0,0,cv.width,cv.height);
+    x.direction="rtl";x.textAlign="center";x.fillStyle=col;let size=40;x.font=`700 ${size}px ${font}`;
+    const wrap=[];for(const l of main){let cur="";for(const w of l.split(" ")){const tst=cur?cur+" "+w:w;if(x.measureText(tst).width>cv.width-60&&cur){wrap.push(cur);cur=w}else cur=tst}if(cur)wrap.push(cur)}
+    const show=wrap.slice(-3);const lh=size*1.35,y0=cv.height/2-(show.length-1)*lh/2;
+    x.textBaseline="middle";show.forEach((l,i)=>x.fillText(l,cv.width/2,y0+i*lh))}}
+$("lvPip").onclick=pipOpen;
 
 /* ============ subtitles: enter + exit effects ============ */
 const subEl=$("sub");
