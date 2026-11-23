@@ -12,7 +12,7 @@ async def main():
             await ctx.route(pat,fn)
         pg = await ctx.new_page(); errs=[]; pg.on("pageerror", lambda e: errs.append(str(e)))
         await pg.add_init_script("sessionStorage.setItem('ag_intro','1')")
-        await pg.goto((T.ROOT/"site/index.html").as_uri()); await pg.wait_for_timeout(800)
+        await pg.goto((T.ROOT/"site/index.html").as_uri() + "#tr"); await pg.wait_for_timeout(800)
         await pg.click(".mode[data-m=live]"); await pg.wait_for_timeout(500)
         st = await pg.evaluate("[document.getElementById('lvScreen').hidden, document.getElementById('lvPhone').hidden, document.getElementById('lvCam').textContent.trim()]")
         print("screen hidden, phone hidden, cam label:", st)

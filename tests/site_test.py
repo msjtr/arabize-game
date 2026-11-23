@@ -96,7 +96,7 @@ async def main():
             errs = []
             pg.on("pageerror", lambda e: errs.append(str(e)))
             await pg.add_init_script("sessionStorage.setItem('ag_intro','1')")
-            await pg.goto((ROOT / "site/index.html").as_uri())
+            await pg.goto((ROOT / "site/index.html").as_uri() + "#tr")
             await pg.wait_for_timeout(600)
             print(name, "engine chip:", await pg.text_content("#engine"))
             # --- text mode, Google

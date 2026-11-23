@@ -16,7 +16,7 @@ async def main():
             await ctx.route(pat, fn)
         pg = await ctx.new_page(); errs = []; pg.on("pageerror", lambda e: errs.append(str(e)))
         await pg.add_init_script("sessionStorage.setItem('ag_intro','1')")
-        await pg.goto((T.ROOT / "site/index.html").as_uri()); await pg.wait_for_timeout(800)
+        await pg.goto((T.ROOT / "site/index.html").as_uri() + "#tr"); await pg.wait_for_timeout(800)
         d1 = base64.b64encode(open("/tmp/game_dialogue.png", "rb").read()).decode()
         await pg.evaluate("""([a])=>{const cv=document.createElement('canvas');cv.width=1920;cv.height=1080;const x=cv.getContext('2d');
           const i=new Image();i.onload=()=>x.drawImage(i,0,0);i.src='data:image/png;base64,'+a;
