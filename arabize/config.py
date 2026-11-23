@@ -18,7 +18,7 @@ from . import styles
 
 APP_NAME_AR = "عرب لعبتك"
 APP_NAME_EN = "Arabize Game"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 
 
 def data_dir() -> Path:
@@ -58,6 +58,11 @@ DEFAULT_HOTKEYS = {
     "hide": "Ctrl+Shift+H",         # hide / show the subtitle
     "mode": "Ctrl+Shift+V",         # switch screen <-> VR
     "retranslate": "Ctrl+Shift+E",  # translate what is on screen now
+    # inside the headset (VR mode): move, size and place the panel without taking the headset off
+    "vr_left": "Ctrl+Shift+Left", "vr_right": "Ctrl+Shift+Right", "vr_up": "Ctrl+Shift+Up", "vr_down": "Ctrl+Shift+Down",
+    "vr_nearer": "Ctrl+Shift+PgUp", "vr_farther": "Ctrl+Shift+PgDown",
+    "vr_bigger": "Ctrl+Shift+Home", "vr_smaller": "Ctrl+Shift+End",
+    "vr_center": "Ctrl+Shift+C", "vr_placement": "Ctrl+Shift+P",
 }
 
 DEFAULT_PROFILE = {
@@ -70,10 +75,13 @@ DEFAULT_PROFILE = {
         "interval_ms": 300,         # how often the region is checked for changes
         "stable_ms": 250,           # text must stay still this long before it is read
         "sensitivity": 3.0,         # mean pixel change (0-255) that counts as "new text"
+        "method": "auto",           # auto | dxgi | window (the game window, like OBS) | gdi
     },
     "ocr": {"engine": "auto", "min_conf": 0.55},
     "lang": {"src": "auto", "tgt": "ar"},
     "translate": {"style": "gaming"},
+    # this game's dictionary: names of characters, weapons, places... -> the translation to always use
+    "glossary": [],                 # [{"src": "Mara", "tr": "مارا", "kind": "character"}]
     "display": {
         "mode": "screen",           # "screen" or "vr"
         "screen": {
@@ -91,7 +99,8 @@ DEFAULT_PROFILE = {
             "layers": styles.DEFAULT_LAYERS,
         },
         "vr": {
-            "distance_m": 1.4, "width_m": 1.1, "height_m": -0.35,
+            "distance_m": 1.4, "width_m": 1.1, "height_m": -0.35, "side_m": 0.0,
+            "placement": "head",    # head (fixed in view) | follow (lazy, smooth) | world (fixed in the room)
             "font_size": 44, "color": "#FFFFFF", "bg": "#0A0E1F", "bg_opacity": 80,
             "show_original": False, "font_family": styles.DEFAULT_FONT, "bold": True,
             "box": "card", "text_fx": "shadow", "accent": "#E7B964", "fx_in": "fade", "fx_out": "fade", "fx_ms": 240,
@@ -116,6 +125,7 @@ DEFAULT_SETTINGS = {
     },
     "profiles": {"default": DEFAULT_PROFILE},
     "templates": {},                # the user's own saved looks: id -> {name, desc, look}
+    "performance": {"preset": "balanced", "gpu": False},   # light | balanced | high; gpu = OCR on the graphics card
 }
 
 
@@ -151,9 +161,45 @@ class Settings:
                 except OSError:
                     pass
                 raw = {}
+        return self._normalize(raw)
+
+    # ---------- backup ----------
+    SECRET_KEYS = ("claude_key", "deepl_key")
+
+    def export_text(self, include_keys: bool = False) -> str:
+        """All settings (every game, templates, dictionary, shortcuts) as one file. API keys are left out unless asked."""
+        with self._lock:
+            data = copy.deepcopy(self.data)
+        if not include_keys:
+            for k in self.SECRET_KEYS:
+                data.get("engines", {}).pop(k, None)
+        return json.dumps({"app": "arabize-game", "kind": "settings", "version": APP_VERSION, "settings": data},
+                          ensure_ascii=False, indent=2)
+
+    def import_text(self, text: str) -> int:
+        """Replace the settings with an exported file. Keys missing from the file keep their current values.
+        Returns how many game profiles were imported. Raises ValueError for a file that is not a settings export."""
+        doc = json.loads(text)
+        raw = doc.get("settings") if isinstance(doc, dict) and doc.get("kind") == "settings" else None
+        if not isinstance(raw, dict) or not isinstance(raw.get("profiles"), dict):
+            raise ValueError("الملف ليس نسخة إعدادات من عرب لعبتك")
+        with self._lock:
+            eng = raw.setdefault("engines", {})
+            for k in self.SECRET_KEYS:                     # keep this PC's keys if the file has none
+                if not eng.get(k) and self.data.get("engines", {}).get(k):
+                    eng[k] = self.data["engines"][k]
+            raw["first_run"] = False
+            self.data = self._normalize(raw)
+            self.save()
+        return len(self.data["profiles"])
+
+    def _normalize(self, raw: dict) -> dict:
+        if not isinstance(raw, dict):
+            raw = {}
         data = deep_merge(DEFAULT_SETTINGS, raw)
         # every profile is completed with defaults so new options appear after updates
         raw_profiles = raw.get("profiles") if isinstance(raw.get("profiles"), dict) else {}
+        data["hotkeys"] = {**DEFAULT_HOTKEYS, **(raw.get("hotkeys") or {})}   # new shortcuts appear for old installs
         data["profiles"] = {k: _migrate_profile(deep_merge(DEFAULT_PROFILE, v), raw_profiles.get(k) or {})
                             for k, v in data["profiles"].items()}
         if "default" not in data["profiles"]:

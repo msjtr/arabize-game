@@ -46,33 +46,82 @@ def _prep(img: np.ndarray, min_h: int = 48, max_side: int = 2200, pad: int = 32)
     return img, scale, pad
 
 
+PERF_PRESETS = {
+    # how often the screen is checked, how large the OCR detector looks, CPU threads
+    "light": {"interval_ms": 600, "stable_ms": 300, "ocr_side": 960, "threads": 1},
+    "balanced": {"interval_ms": 300, "stable_ms": 250, "ocr_side": 1280, "threads": 2},
+    "high": {"interval_ms": 150, "stable_ms": 200, "ocr_side": 1600, "threads": 4},
+}
+
+
+def gpu_available() -> bool:
+    """True when onnxruntime can run the OCR models on the graphics card through DirectML (any DX12 GPU)."""
+    try:
+        import onnxruntime as ort  # type: ignore
+        return "DmlExecutionProvider" in ort.get_available_providers()
+    except Exception:
+        return False
+
+
+def use_gpu(eng) -> bool:
+    """Move RapidOCR's ONNX sessions to the graphics card (DirectML). Falls back to CPU silently."""
+    if not gpu_available():
+        return False
+    import onnxruntime as ort  # type: ignore
+    moved = False
+    seen = set()
+    for part in vars(eng).values():
+        for holder in (part, *vars(part).values()) if hasattr(part, "__dict__") else ():
+            sess = getattr(holder, "session", None)
+            if sess is None or not hasattr(sess, "_model_path") or id(sess) in seen:
+                continue
+            seen.add(id(sess))
+            try:
+                opt = ort.SessionOptions()
+                opt.enable_mem_pattern = False          # required by DirectML
+                opt.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+                holder.session = ort.InferenceSession(sess._model_path, sess_options=opt,
+                                                      providers=["DmlExecutionProvider", "CPUExecutionProvider"])
+                moved = moved or "DmlExecutionProvider" in holder.session.get_providers()
+            except Exception:
+                continue
+    return moved
+
+
 class RapidOcr(BaseOcr):
     name = "rapid"
     _engine = None
     _lock = threading.Lock()
 
-    def __init__(self, min_conf: float = 0.55):
+    _cfg: tuple | None = None
+    gpu_active = False
+
+    def __init__(self, min_conf: float = 0.55, perf: dict | None = None):
         self.min_conf = min_conf
+        p = {**PERF_PRESETS["balanced"], **(perf or {})}
+        self.max_side = int(p["ocr_side"])
+        cfg = (int(p["threads"]), self.max_side, bool(p.get("gpu")))
         with RapidOcr._lock:
-            if RapidOcr._engine is None:
+            if RapidOcr._engine is None or RapidOcr._cfg != cfg:
                 try:
                     from rapidocr_onnxruntime import RapidOCR  # type: ignore
                 except Exception as e:  # pragma: no cover
                     raise OcrError(f"محرك القراءة RapidOCR غير متاح: {e}")
-                eng = RapidOCR(intra_op_num_threads=2, inter_op_num_threads=1)
+                eng = RapidOCR(intra_op_num_threads=cfg[0], inter_op_num_threads=1)
                 # Default sizing scales the SHORT side up to 736px, which turns a thin subtitle strip
                 # into a huge image (1.2 s). Capping the LONG side is ~13x faster on strips and
                 # ~2x on full screens, with equal or better accuracy in our tests.
                 try:
                     op = eng.text_detector.preprocess_op[0]
-                    op.limit_type, op.limit_side_len = "max", 1280
+                    op.limit_type, op.limit_side_len = "max", cfg[1]
                 except (AttributeError, IndexError):
                     pass
                 eng.use_angle_cls = False  # game text is upright; skipping the rotation model saves time
-                RapidOcr._engine = eng
+                RapidOcr.gpu_active = use_gpu(eng) if cfg[2] else False
+                RapidOcr._engine, RapidOcr._cfg = eng, cfg
 
     def read(self, img_bgr: np.ndarray) -> list[Line]:
-        img, scale, pad = _prep(img_bgr)
+        img, scale, pad = _prep(img_bgr, max_side=2200 if self.max_side >= 1280 else 1600)
         with RapidOcr._lock:
             result, _ = RapidOcr._engine(img)
         lines: list[Line] = []
@@ -161,12 +210,12 @@ def _winrt_ns():  # pragma: no cover - Windows only
     raise ImportError("winrt / winsdk not installed")
 
 
-def create_ocr(kind: str = "auto", lang: str = "en", min_conf: float = 0.55) -> BaseOcr:
+def create_ocr(kind: str = "auto", lang: str = "en", min_conf: float = 0.55, perf: dict | None = None) -> BaseOcr:
     errors = []
     order = {"auto": ["windows", "rapid"], "windows": ["windows", "rapid"], "rapid": ["rapid"]}.get(kind, ["rapid"])
     for k in order:
         try:
-            return WindowsOcr(lang, min_conf) if k == "windows" else RapidOcr(min_conf)
+            return WindowsOcr(lang, min_conf) if k == "windows" else RapidOcr(min_conf, perf)
         except OcrError as e:
             errors.append(str(e))
     raise OcrError("؛ ".join(errors))

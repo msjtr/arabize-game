@@ -10,7 +10,7 @@ from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
 from . import render, styles
-from .platform_utils import exclude_from_capture
+from .platform_utils import exclude_from_capture, keep_on_top
 
 FLAGS = Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.WindowDoesNotAcceptFocus
 LAYER_NAMES = {k: n for k, n, _ in styles.LAYERS}
@@ -74,6 +74,9 @@ class SubtitleOverlay(QWidget):
         self._anim.valueChanged.connect(self._on_t)
         self._anim.finished.connect(self._anim_done)
         self.excluded = False
+        # a game entering fullscreen can push topmost windows down; raise the layer again while it shows text
+        self._top = QTimer(self, interval=1500, timeout=lambda: self.isVisible() and keep_on_top(int(self.winId())))
+        self._top.start()
 
     # ---------- public ----------
     def configure(self, style: dict, qscreen) -> None:

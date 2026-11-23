@@ -224,6 +224,33 @@ class ScreensPage(Page):
                           "لا يمكن عرض الترجمة فوق تطبيقات التلفزيون نفسه بدون كمبيوتر."))
         self.v.addWidget(c2)
 
+        cm, lm = card()
+        lm.addWidget(title("طريقة التقاط اللعبة", "scan"))
+        lm.addWidget(hint("البرنامج لا يسجّل ولا يحفظ أي صورة أو فيديو: يقرأ النص من الصورة في الذاكرة ثم يتركها."))
+        from ..capture import METHODS
+        self.method = Chips([(k, t) for k, t, _ in METHODS], wrap=2)
+        self.method.changed.connect(lambda k: self.save("capture.method", k, None))
+        lm.addWidget(self.method)
+        self.method_hint = hint(""); lm.addWidget(self.method_hint)
+        self.method_now = hint(""); lm.addWidget(self.method_now)
+        self.v.addWidget(cm)
+
+        cp, lp = card()
+        lp.addWidget(title("الأداء", "cpu"))
+        from ..ocr import gpu_available
+        self.perf = Chips([("light", "جهاز ضعيف"), ("balanced", "متوازن"), ("high", "جهاز قوي")])
+        self.perf.changed.connect(self._perf)
+        lp.addWidget(self.perf)
+        lp.addWidget(hint("الجهاز الضعيف: فحص أبطأ وقراءة أخف. الجهاز القوي: استجابة أسرع ودقة أعلى."))
+        self.gpu = QCheckBox(); self.gpu.toggled.connect(self._gpu)
+        self.gpu.setEnabled(gpu_available())
+        lp.addWidget(row("قراءة النص على كرت الشاشة (GPU)", self.gpu,
+                         "يخفّف الضغط على المعالج. يعمل مع أي كرت يدعم DirectX 12" if gpu_available()
+                         else "غير متاح على هذا الجهاز"))
+        self.perf_note = hint(""); lp.addWidget(self.perf_note)
+        self.v.addWidget(cp)
+        ctrl.metrics.connect(self._metrics)
+
         c3, l3 = card()
         l3.addWidget(title("سرعة الالتقاط والحساسية", "zap"))
         self.s_int = ValueSlider(100, 1500, 50, " ms", 300)
@@ -257,6 +284,31 @@ class ScreensPage(Page):
         idx = max(0, self.out_screen.findData(self.prof["display"]["screen"]["monitor"]))
         self.out_screen.setCurrentIndex(idx); self.out_screen.blockSignals(False)
         self.s_int.setValue(c["interval_ms"]); self.s_stable.setValue(c["stable_ms"]); self.s_sens.setValue(c["sensitivity"])
+        from ..capture import METHODS
+        m = c.get("method", "auto"); self.method.set(m)
+        self.method_hint.setText(next((d for k, _, d in METHODS if k == m), ""))
+        perf = self.ctrl.settings.data.get("performance", {})
+        self.perf.set(perf.get("preset", "balanced"))
+        self.gpu.blockSignals(True); self.gpu.setChecked(bool(perf.get("gpu"))); self.gpu.blockSignals(False)
+
+    NAMES_CAP = {"dxgi": "DXGI", "window": "نافذة اللعبة", "gdi": "طريقة النظام القديمة"}
+
+    def _metrics(self, m):
+        cap = m.get("capture")
+        if cap:
+            self.method_now.setText(f"يعمل الآن عبر: {self.NAMES_CAP.get(cap, cap)}")
+
+    def _perf(self, k):
+        from ..ocr import PERF_PRESETS
+        p = PERF_PRESETS[k]
+        self.ctrl.settings.set("performance", {**self.ctrl.settings.data.get("performance", {}), "preset": k})
+        self.save("capture.interval_ms", p["interval_ms"], None); self.save("capture.stable_ms", p["stable_ms"], None)
+        self.perf_note.setText("طُبّق. يبدأ أثره الكامل عند تشغيل الترجمة القادم.")
+        self.refresh()
+
+    def _gpu(self, on):
+        self.ctrl.settings.set("performance", {**self.ctrl.settings.data.get("performance", {}), "gpu": bool(on)})
+        self.perf_note.setText("يبدأ عند تشغيل الترجمة القادم.")
 
     def _pick_monitor(self, i):
         self.save("capture.monitor", i, "capture")
@@ -402,6 +454,11 @@ class LookPage(Page):
         c3, l3 = card(); l3.addWidget(title("لوحة الترجمة داخل النظارة", "vr"))
         l3.addWidget(hint("يعمل مع أي نظارة تعمل عبر SteamVR: Valve Index وHTC Vive وMeta Quest (عبر Link أو Air Link أو Virtual Desktop) وPico وWindows MR. "
                           "تتبع اللوحة رأسك على المسافة والارتفاع المحددين. القالب المختار يحدد خط اللوحة وألوانها."))
+        from ..vr import PLACEMENTS
+        self.vplace = Chips([(k, t) for k, t, _ in PLACEMENTS]); self.vplace.changed.connect(self._vplace)
+        l3.addWidget(QLabel("مكان اللوحة")); l3.addWidget(self.vplace)
+        self.vplace_hint = hint(""); l3.addWidget(self.vplace_hint)
+        self.vside = ValueSlider(-1.5, 1.5, 0.05, " م", 0.0, 2); self.vside.valueChanged.connect(lambda v: self._v("side_m", v))
         self.vdist = ValueSlider(0.5, 4.0, 0.1, " م", 1.4, 1); self.vdist.valueChanged.connect(lambda v: self._v("distance_m", v))
         self.vwid = ValueSlider(0.4, 3.0, 0.1, " م", 1.1, 1); self.vwid.valueChanged.connect(lambda v: self._v("width_m", v))
         self.vh = ValueSlider(-1.0, 1.0, 0.05, " م", -0.35, 2); self.vh.valueChanged.connect(lambda v: self._v("height_m", v))
@@ -411,7 +468,7 @@ class LookPage(Page):
         self.vopa = ValueSlider(0, 100, 5, "%", 80); self.vopa.valueChanged.connect(lambda v: self._v("bg_opacity", int(v)))
         self.vorig = QCheckBox(); self.vorig.toggled.connect(lambda b: self._v("show_original", b))
         for lab, w in (("المسافة أمام العين", self.vdist), ("عرض اللوحة", self.vwid), ("الارتفاع (سالب = أسفل النظر)", self.vh),
-                       ("حجم الخط", self.vsize)):
+                       ("يمين / يسار", self.vside), ("حجم الخط", self.vsize)):
             l3.addWidget(row(lab, w))
         l3.addWidget(QLabel("خط اللوحة")); l3.addWidget(self.vfont)
         for lab, w in (("لون الكلام", self.vcolor), ("شفافية الخلفية", self.vopa), ("إظهار النص الأصلي", self.vorig)):
@@ -419,6 +476,12 @@ class LookPage(Page):
         b_vr = QPushButton(icons.icon("vr", theme.GOLD2), "  اختبر اللوحة في النظارة الآن"); b_vr.clicked.connect(ctrl.test_vr)
         l3.addWidget(b_vr)
         vv.addWidget(c3)
+        c4, l4 = card(); l4.addWidget(title("التحكم وأنت داخل النظارة", "keyboard", "violet"))
+        l4.addWidget(hint("تعمل هذه الاختصارات في وضع الواقع الافتراضي بدون نزع النظارة، وتحفظ التغيير لهذه اللعبة. "
+                          "ويمكنك ربطها بأزرار الذراع من إعدادات SteamVR ← Controller Bindings ← Keyboard. تغييرها من صفحة «الاختصارات»."))
+        self.vkeys = QLabel(); self.vkeys.setTextFormat(Qt.RichText); self.vkeys.setWordWrap(True)
+        l4.addWidget(self.vkeys)
+        vv.addWidget(c4)
         self.stack.addWidget(vw)
         self.v.addStretch(1)
         ctrl.profile_changed.connect(self.refresh)
@@ -447,6 +510,12 @@ class LookPage(Page):
         self.prev.set_style(self.prof["display"]["screen"])
         if key == "on":
             self._layer_enable()
+
+    def _vplace(self, k):
+        self._v("placement", k)
+        self.ctrl.vr.recenter()
+        self.ctrl.apply_display()
+        self.refresh()
 
     def _v(self, key, val):
         self.save(f"display.vr.{key}", val)
@@ -518,6 +587,12 @@ class LookPage(Page):
             w["on"].setChecked(cfg["on"]); w["anchor"].setCurrentIndex(max(0, w["anchor"].findData(cfg["anchor"])))
             w["scale"].setValue(cfg["scale"] * 100); w["width_pct"].setValue(cfg["width_pct"]); w["offset"].setValue(cfg["offset"])
         self.vdist.setValue(v["distance_m"]); self.vwid.setValue(v["width_m"]); self.vh.setValue(v["height_m"])
+        self.vside.setValue(v.get("side_m", 0.0)); self.vplace.set(v.get("placement", "head"))
+        from ..vr import PLACEMENTS
+        self.vplace_hint.setText(next((d for k, _, d in PLACEMENTS if k == v.get("placement", "head")), ""))
+        hk = self.ctrl.settings.data["hotkeys"]
+        rows = [(HotkeysPage.NAMES[k], hk.get(k, "")) for k in HotkeysPage.NAMES if k.startswith("vr_")] + [(HotkeysPage.NAMES["hide"], hk.get("hide", ""))]
+        self.vkeys.setText("<table cellspacing=6>" + "".join(f"<tr><td>{n}</td><td dir=ltr><b>{s_}</b></td></tr>" for n, s_ in rows) + "</table>")
         self.vsize.setValue(v["font_size"]); self.vcolor.set(v["color"]); self.vopa.setValue(v["bg_opacity"]); self.vorig.setChecked(v["show_original"])
         for w in widgets:
             w.blockSignals(False)
@@ -686,12 +761,102 @@ class GamesPage(Page):
             btn.clicked.connect(fn); b.addWidget(btn)
         l2.addLayout(b)
         self.v.addWidget(c2)
+
+        # ---- this game's dictionary
+        c3, l3 = card()
+        self.gl_title = title("قاموس اللعبة", "book", "violet"); l3.addWidget(self.gl_title)
+        l3.addWidget(hint("أسماء الشخصيات والأسلحة والأماكن وأي كلمة تريد ترجمتها بطريقة ثابتة. "
+                          "يُطبّق على اللعبة المفعّلة الآن، ويعمل مع كل محركات الترجمة."))
+        self.gl = QTableWidget(0, 3); self.gl.setHorizontalHeaderLabels(["الكلمة في اللعبة", "ترجمتها", "النوع"])
+        self.gl.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.gl.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.gl.verticalHeader().setVisible(False); self.gl.setMinimumHeight(200)
+        self.gl.itemChanged.connect(lambda _: self._gl_save())
+        l3.addWidget(self.gl)
+        gb = QHBoxLayout()
+        for ic, t, fn in (("plus", "إضافة كلمة", self._gl_add), ("trash", "حذف المحدد", self._gl_del),
+                          ("download", "استيراد CSV", self._gl_import), ("save", "تصدير CSV", self._gl_export)):
+            btn = QPushButton(icons.icon(ic, theme.GOLD2), "  " + t); btn.clicked.connect(fn); gb.addWidget(btn)
+        gb.addStretch(1); l3.addLayout(gb)
+        self.v.addWidget(c3)
         self.v.addStretch(1)
         ctrl.profile_changed.connect(self.refresh)
         ctrl.game_changed.connect(lambda exe: self.fg.setText(f"البرنامج في المقدمة الآن: {exe or '—'}"))
         self.refresh()
 
+    KINDS = [("character", "شخصية"), ("weapon", "سلاح أو أداة"), ("place", "مكان"), ("other", "أخرى")]
+
+    def _gl_kind_box(self, kind):
+        cb = QComboBox()
+        for k, t in self.KINDS:
+            cb.addItem(t, k)
+        cb.setCurrentIndex(max(0, cb.findData(kind)))
+        cb.currentIndexChanged.connect(lambda _: self._gl_save())
+        return cb
+
+    def _gl_fill(self):
+        self.gl.blockSignals(True); self.gl.setRowCount(0)
+        for g in self.prof.get("glossary", []):
+            r = self.gl.rowCount(); self.gl.insertRow(r)
+            self.gl.setItem(r, 0, QTableWidgetItem(g.get("src", ""))); self.gl.setItem(r, 1, QTableWidgetItem(g.get("tr", "")))
+            self.gl.setCellWidget(r, 2, self._gl_kind_box(g.get("kind", "other")))
+        self.gl.blockSignals(False)
+        self.gl_title.findChildren(QLabel)[-1].setText(f"قاموس «{self.prof['name']}»")
+
+    def _gl_rows(self):
+        out = []
+        for r in range(self.gl.rowCount()):
+            a, b = self.gl.item(r, 0), self.gl.item(r, 1)
+            src, tr = (a.text().strip() if a else ""), (b.text().strip() if b else "")
+            cb = self.gl.cellWidget(r, 2)
+            out.append({"src": src, "tr": tr, "kind": cb.currentData() if cb else "other"})
+        return out
+
+    def _gl_save(self):
+        self.ctrl.settings.update_profile("glossary", [g for g in self._gl_rows() if g["src"] or g["tr"]])
+
+    def _gl_add(self):
+        r = self.gl.rowCount(); self.gl.insertRow(r)
+        self.gl.setItem(r, 0, QTableWidgetItem("")); self.gl.setItem(r, 1, QTableWidgetItem(""))
+        self.gl.setCellWidget(r, 2, self._gl_kind_box("character"))
+        self.gl.setCurrentCell(r, 0); self.gl.editItem(self.gl.item(r, 0))
+
+    def _gl_del(self):
+        rows = sorted({i.row() for i in self.gl.selectedIndexes()}, reverse=True)
+        for r in rows:
+            self.gl.removeRow(r)
+        self._gl_save()
+
+    def _gl_import(self):
+        import csv
+        path, _ = QFileDialog.getOpenFileName(self, "استيراد قاموس", "", "CSV (*.csv *.txt)")
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8-sig", newline="") as f:
+                rows = [r for r in csv.reader(f) if len(r) >= 2 and r[0].strip() and r[1].strip()]
+        except (OSError, csv.Error, UnicodeDecodeError) as e:
+            self.ctrl.toast(f"تعذّر قراءة الملف: {e}", err=True); return
+        kinds = {k for k, _ in self.KINDS}
+        new = [{"src": r[0].strip()[:80], "tr": r[1].strip()[:80], "kind": (r[2].strip() if len(r) > 2 and r[2].strip() in kinds else "other")}
+               for r in rows if r[0].strip().lower() not in ("source", "الكلمة في اللعبة")]
+        have = {g["src"].lower() for g in self.prof.get("glossary", [])}
+        merged = self.prof.get("glossary", []) + [g for g in new if g["src"].lower() not in have]
+        self.ctrl.settings.update_profile("glossary", merged); self._gl_fill()
+        self.ctrl.toast(f"أُضيفت {len(merged) - len(have)} كلمة")
+
+    def _gl_export(self):
+        import csv
+        path, _ = QFileDialog.getSaveFileName(self, "تصدير القاموس", f"{self.prof['name']}-dictionary.csv", "CSV (*.csv)")
+        if path:
+            with open(path, "w", encoding="utf-8-sig", newline="") as f:
+                w = csv.writer(f); w.writerow(["source", "translation", "kind"])
+                for g in self.prof.get("glossary", []):
+                    w.writerow([g["src"], g["tr"], g.get("kind", "other")])
+            self.ctrl.toast("صُدّر القاموس")
+
     def refresh(self):
+        self._gl_fill()
         self.list.clear()
         s = self.ctrl.settings
         for pid, p in s.data["profiles"].items():
@@ -821,7 +986,11 @@ class HistoryPage(Page):
 class HotkeysPage(Page):
     title_text = "الاختصارات"
     NAMES = {"toggle": "تشغيل / إيقاف الترجمة", "region": "تحديد منطقة الترجمة", "hide": "إخفاء / إظهار الترجمة",
-             "mode": "التبديل بين الشاشة والواقع الافتراضي", "retranslate": "ترجم الشاشة الآن"}
+             "mode": "التبديل بين الشاشة والواقع الافتراضي", "retranslate": "ترجم الشاشة الآن",
+             "vr_left": "VR: تحريك اللوحة لليسار", "vr_right": "VR: تحريك اللوحة لليمين", "vr_up": "VR: رفع اللوحة",
+             "vr_down": "VR: خفض اللوحة", "vr_nearer": "VR: تقريب اللوحة", "vr_farther": "VR: إبعاد اللوحة",
+             "vr_bigger": "VR: تكبير اللوحة", "vr_smaller": "VR: تصغير اللوحة", "vr_center": "VR: إعادة اللوحة أمامك",
+             "vr_placement": "VR: تبديل مكان اللوحة (أمام العين / تتبع / ثابتة)"}
 
     def __init__(self, ctrl):
         super().__init__(ctrl)
@@ -861,7 +1030,9 @@ class HotkeysPage(Page):
 class HelpPage(Page):
     title_text = "المساعدة"
     FAQ = [
-        ("الترجمة لا تظهر فوق اللعبة", "شغّل اللعبة بوضع «نافذة بلا حواف» (Borderless Windowed) بدل «ملء الشاشة الحصري» (Exclusive Fullscreen)؛ وضع الحصري يمنع أي برنامج من الظهور فوقها. وتأكد أن الترجمة ليست مخفية (Ctrl+Shift+H)."),
+        ("الترجمة لا تظهر فوق اللعبة", "البرنامج يعيد رفع الترجمة فوق اللعبة باستمرار، ويعمل مع «ملء الشاشة» في معظم ألعاب ويندوز 10 و11. "
+         "بعض الألعاب القديمة في «ملء الشاشة الحصري» تمنع أي نافذة من الظهور فوقها: اختر فيها «نافذة بلا حواف» (Borderless). وتأكد أن الترجمة ليست مخفية (Ctrl+Shift+H)."),
+        ("الصورة سوداء أو لا يقرأ شيئاً", "من صفحة «الشاشة والمنطقة» جرّب طريقة التقاط أخرى: «نافذة اللعبة فقط» تلتقط اللعبة نفسها مثل OBS، و«DXGI» تعمل مع ملء الشاشة."),
         ("لا يقرأ النص أو يقرأه خطأ", "حدّد منطقة الحوار فقط بدل الشاشة كاملة، واجعل حجم الترجمة في اللعبة أكبر إن أمكن. جرّب محرك القراءة الآخر من صفحة المحركات (الوضع المتقدم)."),
         ("الترجمة بطيئة", "حدّد منطقة صغيرة، وقلّل «انتظار ثبات النص»، وفعّل محرك ترجمة واحد سريع. النصوص المتكررة تُترجم فوراً من الذاكرة."),
         ("يظهر «بانتظار الإنترنت»", "انقطع الاتصال أو تعطل المحرك. البرنامج يعيد المحاولة تلقائياً وينتقل للمحرك التالي. استخدم «اختبر المحركات» لمعرفة السبب."),
@@ -872,9 +1043,9 @@ class HelpPage(Page):
 
     def __init__(self, ctrl):
         super().__init__(ctrl)
-        c, l = card(gold=True); l.addWidget(title("الدرس التعليمي", "play"))
-        l.addWidget(hint("شرح مرئي من الألف إلى الياء في 10 خطوات، مع أمثلة تجربها مباشرة."))
-        b = QPushButton(icons.icon("play", "#1A1204"), "  شاهد الدرس من جديد"); b.setObjectName("Primary"); b.clicked.connect(ctrl.show_tutorial)
+        c, l = card(gold=True); l.addWidget(title("فيديو الشرح", "play"))
+        l.addWidget(hint("يعمل وحده كالفيديو من الألف إلى الياء: اختيار اللعبة، وتشغيل الترجمة، وتخصيص شكلها ومكانها، ووضع الشاشة ووضع الواقع الافتراضي."))
+        b = QPushButton(icons.icon("play", "#1A1204"), "  إعادة الشرح"); b.setObjectName("Primary"); b.clicked.connect(ctrl.show_tutorial)
         l.addWidget(b, 0, Qt.AlignRight)
         self.v.addWidget(c)
         c2, l2 = card(); l2.addWidget(title("حل المشاكل الشائعة", "help"))
@@ -888,4 +1059,47 @@ class HelpPage(Page):
         l3.addWidget(hint(f"مجلد الإعدادات والذاكرة: {data_dir()}"))
         ob = QPushButton("فتح مجلد الإعدادات"); ob.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(data_dir()))))
         l3.addWidget(ob, 0, Qt.AlignRight)
-        self.v.addWidget(c3); self.v.addStretch(1)
+        self.v.addWidget(c3)
+
+        c4, l4 = card(); l4.addWidget(title("النسخ الاحتياطي ونقل الإعدادات", "save" if "save" in icons.icons3d.GLYPHS else "download", "emerald"))
+        l4.addWidget(hint("ملف واحد فيه كل ألعابك وقوالبك وقواميسك واختصاراتك. انقله لجهاز آخر أو احتفظ به. مفاتيح API لا تُحفظ فيه."))
+        bb = QHBoxLayout()
+        e = QPushButton(icons.icon("download", theme.GOLD2), "  تصدير الإعدادات"); e.clicked.connect(self._export); bb.addWidget(e)
+        i = QPushButton(icons.icon("plus", theme.GOLD2), "  استيراد الإعدادات"); i.clicked.connect(self._import); bb.addWidget(i)
+        bb.addStretch(1); l4.addLayout(bb)
+        self.v.addWidget(c4)
+
+        c5, l5 = card(); l5.addWidget(title("سجل الأخطاء", "info", "slate"))
+        from .. import logs
+        l5.addWidget(hint(f"يسجّل البرنامج الأخطاء فقط (بدون صور أو ترجمات أو مفاتيح) في: {logs.log_dir()}"))
+        lb = QHBoxLayout()
+        o = QPushButton("فتح مجلد السجلات"); o.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(logs.log_dir()))))
+        r = QPushButton("نسخ تقرير المشكلة"); r.clicked.connect(self._copy_report)
+        lb.addWidget(o); lb.addWidget(r); lb.addStretch(1); l5.addLayout(lb)
+        self.v.addWidget(c5); self.v.addStretch(1)
+
+    def _export(self):
+        path, _ = QFileDialog.getSaveFileName(self, "تصدير الإعدادات", "arabize-settings.json", "JSON (*.json)")
+        if path:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(self.ctrl.settings.export_text())
+            self.ctrl.toast("صُدّرت الإعدادات")
+
+    def _import(self):
+        path, _ = QFileDialog.getOpenFileName(self, "استيراد الإعدادات", "", "JSON (*.json)")
+        if not path:
+            return
+        if QMessageBox.question(self, "استيراد الإعدادات", "ستُستبدل إعداداتك الحالية بإعدادات الملف. متابعة؟") != QMessageBox.Yes:
+            return
+        try:
+            with open(path, encoding="utf-8") as f:
+                n = self.ctrl.settings.import_text(f.read())
+        except (OSError, ValueError) as e:
+            self.ctrl.toast(f"تعذّر الاستيراد: {e}", err=True); return
+        self.ctrl.apply_display(); self.ctrl.apply_hotkeys(); self.ctrl.profile_changed.emit()
+        self.ctrl.toast(f"استُوردت الإعدادات ({n} من الألعاب)")
+
+    def _copy_report(self):
+        from .. import logs
+        QGuiApplication.clipboard().setText(logs.report())
+        self.ctrl.toast("نُسخ التقرير — الصقه في رسالتك")

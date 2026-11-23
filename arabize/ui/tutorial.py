@@ -5,7 +5,7 @@ import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QProgressBar, QPushButton, QVBoxLayout, QWidget
 
 from .. import render
 from . import icons, theme
@@ -13,11 +13,11 @@ from .widgets import paint_game_scene
 
 STEPS = [
     ("ما هو «عرب لعبتك»؟",
-     "برنامج يقرأ النصوص التي تظهر في لعبتك — الحوارات والمهام والقوائم — ويترجمها إلى العربية مباشرة أثناء اللعب، "
-     "ويعرضها فوق اللعبة بدون أن تنسخ أي شيء. لا يحتاج أن تدعم اللعبة العربية.", None),
+     "العب بلغتك بدون ما تغيّر شيئاً في اللعبة. البرنامج يقرأ الحوارات والمهام والقوائم ويترجمها إلى العربية أثناء اللعب، "
+     "ويعرضها فوق اللعبة. لا يسجّل ولا يحفظ أي صورة أو فيديو، ولا يحتاج حساباً. بعد التحميل: فكّ الضغط وشغّل ArabizeGame.exe.", None),
     ("اختر الشاشة أو التلفزيون",
-     "من صفحة «الشاشة والمنطقة» اختر الشاشة التي تعمل عليها اللعبة، والشاشة التي تظهر عليها الترجمة. "
-     "أي تلفزيون LG أو Samsung أو غيره موصول بالكمبيوتر يظهر هنا كشاشة.", ("افتح صفحة الشاشات", "screens")),
+     "من صفحة «الشاشة والمنطقة» اختر الشاشة التي تعمل عليها اللعبة، أو «نافذة اللعبة فقط» لالتقاط اللعبة نفسها مثل OBS، "
+     "والشاشة التي تظهر عليها الترجمة. أي تلفزيون LG أو Samsung أو غيره موصول بالكمبيوتر يظهر هنا كشاشة.", ("افتح صفحة الشاشات", "screens")),
     ("شغّل الترجمة",
      "اضغط الزر الذهبي الكبير في صفحة «التشغيل»، أو اضغط Ctrl+Shift+T من داخل اللعبة. "
      "يقرأ البرنامج الشاشة فقط عندما يظهر نص جديد، فلا يثقل جهازك.", None),
@@ -33,9 +33,10 @@ STEPS = [
      "إن تعطل محرك ينتقل البرنامج تلقائياً للذي بعده.", ("اختبر المحركات", "engines")),
     ("الشاشة أو الواقع الافتراضي",
      "زر واضح في صفحة «التشغيل» يبدّل بين عرض الترجمة على الشاشة، وعرضها كلوحة داخل نظارة VR عبر SteamVR. "
-     "لكل وضع إعداداته المستقلة. الاختصار: Ctrl+Shift+V.", None),
+     "لكل وضع إعداداته المستقلة. داخل النظارة: Ctrl+Shift+الأسهم للتحريك، PgUp/PgDn للتقريب والإبعاد، "
+     "Ctrl+Shift+P لتثبيت اللوحة أمامك أو في مكانها. التبديل: Ctrl+Shift+V.", None),
     ("أثناء اللعب",
-     "شغّل لعبتك بوضع «نافذة بلا حواف» (Borderless) حتى تظهر الترجمة فوقها. يبقى البرنامج في شريط المهام بجانب الساعة، "
+     "تعمل الترجمة فوق الألعاب في ملء الشاشة وبلا حواف وفي نافذة. إن لم تظهر فوق لعبة قديمة فاختر فيها «بلا حواف». يبقى البرنامج في شريط المهام بجانب الساعة، "
      "ويحفظ إعدادات كل لعبة على حدة ويبدّلها تلقائياً عند فتحها.", None),
     ("الإيقاف وإعادة التشغيل",
      "Ctrl+Shift+T يوقف الترجمة ويعيد تشغيلها، وCtrl+Shift+H يخفي الترجمة ويظهرها، وCtrl+Shift+E يترجم الشاشة فوراً. "
@@ -239,7 +240,7 @@ class Tutorial(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("Tutorial")
-        self.setWindowTitle("الدرس التعليمي — عرب لعبتك")
+        self.setWindowTitle("فيديو الشرح — عرب لعبتك")
         self.setMinimumSize(900, 660)
         self.setLayoutDirection(Qt.RightToLeft)
         v = QVBoxLayout(self); v.setContentsMargins(26, 22, 26, 20); v.setSpacing(12)
@@ -251,7 +252,10 @@ class Tutorial(QDialog):
         self.act = QPushButton(); self.act.clicked.connect(lambda: self.action.emit(STEPS[self.i][2][1]))
         v.addWidget(self.act, 0, Qt.AlignRight)
         v.addStretch(1)
+        self.bar = QProgressBar(); self.bar.setTextVisible(False); self.bar.setMaximumHeight(4); self.bar.setRange(0, 1000)
+        v.addWidget(self.bar)
         bottom = QHBoxLayout()
+        self.play = QPushButton(); self.play.clicked.connect(self._toggle_play); bottom.addWidget(self.play)
         self.dots = QLabel(); bottom.addWidget(self.dots)
         bottom.addStretch(1)
         skip = QPushButton("تخطي"); skip.clicked.connect(self._finish); bottom.addWidget(skip)
@@ -259,9 +263,43 @@ class Tutorial(QDialog):
         self.next = QPushButton(); self.next.setObjectName("Primary"); self.next.clicked.connect(self._next); bottom.addWidget(self.next)
         v.addLayout(bottom)
         self.i = 0
+        # plays by itself like a video; pause, previous and next stay available
+        self.autoplay = True
+        self._elapsed = 0.0
+        self.clock = QTimer(self, interval=50); self.clock.timeout.connect(self._advance); self.clock.start()
         self.go(0)
+        self._sync_play()
+
+    def step_seconds(self, i: int | None = None) -> float:
+        """Time on a step: long enough to read its text calmly."""
+        t, b, _ = STEPS[self.i if i is None else i]
+        return max(7.0, (len(t) + len(b)) * 0.075)
+
+    def _advance(self):
+        if not self.autoplay:
+            return
+        self._elapsed += 0.05
+        self.bar.setValue(int(1000 * min(1.0, self._elapsed / self.step_seconds())))
+        if self._elapsed >= self.step_seconds():
+            if self.i < len(STEPS) - 1:
+                self.go(self.i + 1)
+            else:
+                self.autoplay = False; self._sync_play()
+
+    def _toggle_play(self):
+        self.autoplay = not self.autoplay
+        if self.autoplay and self.i == len(STEPS) - 1 and self._elapsed >= self.step_seconds():
+            self.go(0)
+        self._sync_play()
+
+    def _sync_play(self):
+        self.play.setText("  إيقاف مؤقت" if self.autoplay else "  تشغيل")
+        self.play.setIcon(icons.icon("pause" if self.autoplay else "play", theme.GOLD2))
 
     def go(self, i):
+        self._elapsed = 0.0
+        if hasattr(self, "bar"):
+            self.bar.setValue(0)
         self.i = max(0, min(len(STEPS) - 1, i))
         t, b, a = STEPS[self.i]
         self.ill.set_step(self.i)
@@ -281,6 +319,7 @@ class Tutorial(QDialog):
             self.go(self.i + 1)
 
     def _finish(self):
+        self.clock.stop()
         self.finished_tutorial.emit()
         self.close()
 

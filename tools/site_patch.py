@@ -137,7 +137,7 @@ rep('''  <section class="view on" id="v-tr">
 ''', '''  <section class="view on" id="v-tr">
     <div class="pcapp" id="pcapp">
       <span class="i3d" data-i="monitor" data-h="blue"></span>
-      <div><b>برنامج عرب لعبتك للكمبيوتر</b><small>يقرأ الشاشة أثناء اللعب ويعرض الترجمة فوق اللعبة مباشرة، على الشاشات والتلفزيونات المتصلة ونظارات VR. مجاني لويندوز 10 و11.</small></div>
+      <div><b>العب بلغتك، بدون ما تغيّر شيئاً في اللعبة</b><small>برنامج عرّب لعبتك للكمبيوتر: ترجمة فورية فوق أي لعبة على ويندوز، في ملء الشاشة وداخل الواقع الافتراضي، بدون تسجيل. مجاني لويندوز 10 و11.</small></div>
       <a href="https://github.com/msjtr/arabize-game/releases/latest/download/ArabizeGame-Windows.zip" rel="noopener"><svg class="ic sm"><use href="#i-dl"/></svg>تحميل البرنامج</a>
     </div>
 ''')

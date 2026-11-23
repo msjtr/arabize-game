@@ -14,7 +14,8 @@ from PySide6.QtCore import QThread, Signal
 from .capture import Capturer, ChangeDetector
 from .engines import AllEnginesFailed, Manager, Request
 from .ocr import OcrError, create_ocr
-from .platform_utils import process_usage
+from .logs import log
+from .platform_utils import find_game_window, process_usage
 from .textproc import TextTracker, classify, group_lines
 
 
@@ -62,14 +63,21 @@ class LiveTranslator(QThread):
     def run(self):
         prof = self.settings.profile
         try:
-            self._ocr = create_ocr(prof["ocr"]["engine"], _ocr_lang(prof["lang"]["src"]), prof["ocr"]["min_conf"])
+            from .ocr import PERF_PRESETS
+            perf = self.settings.data.get("performance", {})
+            self._ocr = create_ocr(prof["ocr"]["engine"], _ocr_lang(prof["lang"]["src"]), prof["ocr"]["min_conf"],
+                                   {**PERF_PRESETS.get(perf.get("preset", "balanced"), PERF_PRESETS["balanced"]),
+                                    "gpu": bool(perf.get("gpu"))})
         except OcrError as e:
+            log.error("OCR start failed: %s", e)
             self.status.emit("error", f"تعذّر تشغيل قراءة النص: {e}")
             return
-        cap = Capturer()
         cap_cfg = prof["capture"]
+        cap = Capturer(cap_cfg.get("method", "auto"))
+        game, game_t = None, 0.0
         detector = ChangeDetector(cap_cfg["sensitivity"], cap_cfg["stable_ms"])
         self.status.emit("running", f"يعمل ({self._ocr.name}) — بانتظار نص جديد")
+        log.info("live start: ocr=%s method=%s", self._ocr.name, cap_cfg.get("method", "auto"))
         process_usage()
         last_metrics = 0.0
         stats = {"frames": 0, "reads": 0, "translations": 0, "cap_ms": 0.0, "ocr_ms": 0.0, "tr_ms": 0.0}
@@ -83,7 +91,12 @@ class LiveTranslator(QThread):
                 continue
             try:
                 t0 = time.perf_counter()
-                img, box = cap.grab(c["monitor"], None if c["full"] else c["region"])
+                if cap.method != c.get("method", "auto"):
+                    cap.close(); cap = Capturer(c.get("method", "auto"))
+                if cap.method == "window" and time.monotonic() - game_t > 2.0:   # look the game window up every 2 s
+                    game, game_t = find_game_window(prof.get("exe") or None), time.monotonic()
+                img, box = cap.grab(c["monitor"], None if c["full"] else c["region"], game)
+                stats["capture"] = cap.active
                 stats["cap_ms"] = (time.perf_counter() - t0) * 1000
                 stats["frames"] += 1
                 now = time.monotonic()
@@ -95,6 +108,7 @@ class LiveTranslator(QThread):
                 if fire or retry_due:
                     self._read_and_translate(self._ocr, img, box, prof, stats, retry_due and not fire)
             except Exception as e:  # never let one bad frame kill the loop
+                log.exception("capture/read loop error")
                 self.status.emit("error", f"خطأ أثناء الالتقاط: {e}")
                 self.msleep(1000)
             if time.monotonic() - last_metrics > 1.0:
@@ -103,6 +117,7 @@ class LiveTranslator(QThread):
                 last_metrics = time.monotonic()
             spent = (time.perf_counter() - t_loop) * 1000
             self.msleep(int(max(30, c["interval_ms"] - spent)))
+        cap.close()
         self.status.emit("stopped", "متوقف")
 
     def _read_and_translate(self, ocr, img, box, prof, stats, retry_only: bool):
@@ -148,6 +163,7 @@ class LiveTranslator(QThread):
             if e.network:
                 self.status.emit("offline", "لا يوجد اتصال بالإنترنت — سأعيد المحاولة تلقائياً")
             else:
+                log.warning("translation failed: %s", e)
                 self.status.emit("error", f"تعذّرت الترجمة: {e}")
             return
         self._pending = None
@@ -159,10 +175,11 @@ class LiveTranslator(QThread):
     def _translate_items(self, items, prof):
         src, tgt, style = prof["lang"]["src"], prof["lang"]["tgt"], prof["translate"]["style"]
         ctx = tuple(self.context)
+        gl = tuple((g.get("src", ""), g.get("tr", "")) for g in prof.get("glossary", []) if g.get("src") and g.get("tr"))
         engine_used, source_used = "", ""
         # One request for the whole screen when possible (fast, keeps context), split back by line.
         joined = "\n".join(it["src"] for it in items)
-        res = self.manager.translate(Request(joined, src, tgt, style, ctx))
+        res = self.manager.translate(Request(joined, src, tgt, style, ctx, gl))
         parts = [p.strip() for p in res.text.split("\n") if p.strip()]
         if len(parts) == len(items):
             for it, p in zip(items, parts):
@@ -170,11 +187,11 @@ class LiveTranslator(QThread):
             engine_used, source_used = res.engine, res.source
         else:  # the engine merged/split lines: translate block by block
             for it in items:
-                r = self.manager.translate(Request(it["src"], src, tgt, style, ctx))
+                r = self.manager.translate(Request(it["src"], src, tgt, style, ctx, gl))
                 it["tr"], engine_used, source_used = r.text, r.engine, r.source
         labels = [it["label"] for it in items if it["label"]]
         if labels:
-            lr = self.manager.translate(Request("\n".join(labels), src, tgt, style))
+            lr = self.manager.translate(Request("\n".join(labels), src, tgt, style, (), gl))
             lparts = [p.strip() for p in lr.text.split("\n")]
             it_l = iter(lparts if len(lparts) == len(labels) else labels)
             for it in items:

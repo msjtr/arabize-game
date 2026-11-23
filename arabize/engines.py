@@ -9,7 +9,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
+import hashlib
+from dataclasses import dataclass, replace
 
 from .cache import Store
 from .config import LANG_NAMES_EN
@@ -47,6 +48,47 @@ class Request:
     style: str = "gaming"
     context: tuple[str, ...] = ()   # previous lines of the same scene (for smart engines)
     glossary: tuple[tuple[str, str], ...] = ()
+
+
+# ------------------------------------------------------------------ game dictionary (names of characters, weapons, places)
+def _term_re(src: str):
+    return re.compile(rf"(?<!\w){re.escape(src)}(?!\w)", re.I)
+
+
+def terms_in(text: str, glossary) -> tuple[tuple[str, str], ...]:
+    """The dictionary entries that actually appear in text, longest first. A short term that only appears inside a
+    longer one ("Sword" inside "Iron Sword") is left out, so the longer translation wins."""
+    pairs = {}
+    for src, tr in glossary or ():
+        src, tr = (src or "").strip(), (tr or "").strip()
+        if src and tr and src.lower() in text.lower():
+            pairs.setdefault(src, tr)
+    found, rest = [], text
+    for src, tr in sorted(pairs.items(), key=lambda kv: -len(kv[0])):
+        rx = _term_re(src)
+        if rx.search(rest):
+            found.append((src, tr))
+            rest = rx.sub(" ", rest)
+    return tuple(found)
+
+
+def protect(text: str, terms) -> tuple[str, dict[str, str]]:
+    """Swap each dictionary term for a token that translation engines copy as-is, e.g. "Mara" -> "QXZ0"."""
+    mapping = {}
+    for src, tr in terms:
+        tok = f"QXZ{len(mapping)}"
+        new = _term_re(src).sub(tok, text)
+        if new != text:
+            mapping[tok] = tr
+            text = new
+    return text, mapping
+
+
+def restore(text: str, mapping: dict[str, str]) -> str:
+    """Put the chosen translations back where the tokens are (engines sometimes add spaces or change case)."""
+    if not mapping:
+        return text
+    return re.sub(r"Q\s*X\s*Z\s*(\d+)", lambda m: mapping.get(f"QXZ{m.group(1)}", m.group(0)), text, flags=re.I)
 
 
 class Engine:
@@ -262,8 +304,12 @@ class Manager:
 
     def translate(self, req: Request, use_memory: bool = True) -> Result:
         t0 = time.perf_counter()
+        terms = terms_in(req.text, req.glossary)
+        req = replace(req, glossary=terms)
+        # a dictionary changes the answer, so it is part of the memory key
+        mem_style = req.style + ("|g:" + hashlib.md5(repr(terms).encode("utf-8")).hexdigest()[:10] if terms else "")
         if use_memory:
-            hit = self.store.lookup(req.text, req.src, req.tgt, req.style)
+            hit = self.store.lookup(req.text, req.src, req.tgt, mem_style)
             if hit:
                 return Result(hit[0], hit[1].split(":")[-1], hit[1], None, (time.perf_counter() - t0) * 1000)
         errors: dict[str, str] = {}
@@ -274,10 +320,16 @@ class Manager:
         for eng in ready:
             for attempt in range(len(self.RETRIES) + 1):
                 try:
-                    out, det = eng.translate(req)
+                    if terms and not eng.smart:
+                        # plain engines: hide the names behind tokens, translate, put the chosen names back
+                        masked, mapping = protect(req.text, terms)
+                        out, det = eng.translate(replace(req, text=masked))
+                        out = restore(out, mapping)
+                    else:
+                        out, det = eng.translate(req)   # smart engines get the dictionary in the prompt
                     with self._lock:
                         self._fails[eng.id] = 0
-                    self.store.put(req.text, req.src, req.tgt, req.style, eng.id, out)
+                    self.store.put(req.text, req.src, req.tgt, mem_style, eng.id, out)
                     return Result(out, eng.id, "engine", det, (time.perf_counter() - t0) * 1000)
                 except EngineError as e:
                     errors[eng.id] = str(e)

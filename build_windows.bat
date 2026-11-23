@@ -7,9 +7,12 @@ if not exist .venv ( py -3.12 -m venv .venv 2>nul || py -3.11 -m venv .venv 2>nu
 call .venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 pip install -r requirements-dev.txt || goto :err
+REM OCR على كرت الشاشة: نسخة onnxruntime التي تدعم DirectML
+pip uninstall -y onnxruntime
+pip install --no-deps onnxruntime-directml || goto :err
 echo.
 echo === تشغيل الاختبارات ===
-python -m pytest -q tests\test_core.py tests\test_ocr.py tests\test_windows.py || goto :err
+python -m pytest -q tests\test_core.py tests\test_ocr.py tests\test_looks.py tests\test_windows.py || goto :err
 echo.
 echo === بناء البرنامج ===
 pyinstaller --noconfirm ArabizeGame.spec || goto :err

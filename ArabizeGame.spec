@@ -6,7 +6,7 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 datas = [("arabize/assets", "arabize/assets")]
 binaries, hidden = [], []
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
-for pkg in ("rapidocr_onnxruntime", "openvr"):
+for pkg in ("rapidocr_onnxruntime", "openvr") + (("windows_capture",) if sys.platform == "win32" else ()):
     d, b, h = collect_all(pkg)
     datas += d; binaries += b; hidden += h
 # onnxruntime: only the runtime itself, not its model-conversion tools (which drag in scipy/pandas/sympy)

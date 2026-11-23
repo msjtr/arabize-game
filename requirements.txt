@@ -2,7 +2,11 @@
 PySide6>=6.6,<6.10
 rapidocr_onnxruntime==1.2.3
 onnxruntime>=1.17
+# On Windows the build swaps onnxruntime for onnxruntime-directml (same module, adds the GPU provider);
+# see build_windows.bat and the CI workflow.
 mss>=9.0
+# OBS-style capture on Windows: DXGI desktop duplication + Windows Graphics Capture of the game window
+windows-capture>=2.0.1 ; sys_platform == "win32"
 numpy>=1.26
 pynput>=1.7.6
 psutil>=5.9

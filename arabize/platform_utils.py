@@ -49,6 +49,74 @@ def foreground_title() -> str:
         return ""
 
 
+def keep_on_top(win_id: int) -> bool:
+    """Re-assert always-on-top. A game switching to fullscreen can push other topmost windows down;
+    overlays like the Xbox Game Bar re-raise themselves the same way."""
+    if not IS_WIN:
+        return False
+    try:
+        HWND_TOPMOST, SWP_NOSIZE, SWP_NOMOVE, SWP_NOACTIVATE, SWP_SHOWWINDOW = -1, 0x1, 0x2, 0x10, 0x40
+        return bool(ctypes.windll.user32.SetWindowPos(ctypes.c_void_p(int(win_id)), ctypes.c_void_p(HWND_TOPMOST), 0, 0, 0, 0,
+                                                      SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_SHOWWINDOW))
+    except Exception:
+        return False
+
+
+def find_game_window(exe: str | None = None) -> tuple[int, str] | None:
+    """(hwnd, exe) of the game: the foreground window, or the largest visible window of exe if given."""
+    if not IS_WIN:
+        return None
+    try:
+        import psutil
+        user32 = ctypes.windll.user32
+        own_pid = __import__("os").getpid()
+
+        def exe_of(h):
+            pid = ctypes.c_ulong(); user32.GetWindowThreadProcessId(h, ctypes.byref(pid))
+            if not pid.value or pid.value == own_pid:
+                return None
+            try:
+                return psutil.Process(pid.value).name()
+            except Exception:
+                return None
+
+        if not exe:
+            h = user32.GetForegroundWindow()
+            e = exe_of(h) if h else None
+            return (int(h), e) if e else None
+        best, best_area = None, 0
+        EnumProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+        def cb(h, _):
+            nonlocal best, best_area
+            if user32.IsWindowVisible(h) and (exe_of(h) or "").lower() == exe.lower():
+                r = window_rect(h)
+                if r and r[2] * r[3] > best_area:
+                    best, best_area = int(h), r[2] * r[3]
+            return True
+        user32.EnumWindows(EnumProc(cb), 0)
+        return (best, exe) if best else None
+    except Exception:
+        return None
+
+
+def window_rect(hwnd: int) -> tuple[int, int, int, int] | None:
+    """Screen rectangle (x, y, w, h) of a window as it is drawn (without the invisible resize border)."""
+    if not IS_WIN:
+        return None
+    try:
+        class RECT(ctypes.Structure):
+            _fields_ = [("l", ctypes.c_long), ("t", ctypes.c_long), ("r", ctypes.c_long), ("b", ctypes.c_long)]
+        r = RECT()
+        DWMWA_EXTENDED_FRAME_BOUNDS = 9
+        if ctypes.windll.dwmapi.DwmGetWindowAttribute(ctypes.c_void_p(int(hwnd)), DWMWA_EXTENDED_FRAME_BOUNDS,
+                                                      ctypes.byref(r), ctypes.sizeof(r)) != 0:
+            ctypes.windll.user32.GetWindowRect(ctypes.c_void_p(int(hwnd)), ctypes.byref(r))
+        return r.l, r.t, r.r - r.l, r.b - r.t
+    except Exception:
+        return None
+
+
 _PROC = None
 
 

@@ -32,6 +32,8 @@ def main() -> int:
         QMessageBox.information(None, "عرب لعبتك", "البرنامج يعمل بالفعل — تجده بجانب الساعة في شريط المهام.")
         return 0
 
+    from arabize import logs
+    logs.setup()
     ctrl = Controller()
     win = MainWindow(ctrl)
     ctrl.window = win

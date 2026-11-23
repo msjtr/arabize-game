@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+import time
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtGui import QAction, QGuiApplication
@@ -45,6 +46,8 @@ class Controller(QObject):
         self.overlay = OverlayLayers()
         self.overlay.moved.connect(self._overlay_moved)
         self.vr = VRSubtitle()
+        self.vr_timer = QTimer(self, interval=16); self.vr_timer.timeout.connect(self._vr_tick)
+        self._vr_t = time.monotonic()
         self.overlay_hidden = False
         self.last_items: list[dict] = []
         self.quitting = False
@@ -158,11 +161,66 @@ class Controller(QObject):
             self.vr.apply_style({**self.prof["display"]["vr"], "rtl": st["rtl"]})
             if self.last_items:
                 self.vr.show_items(self.last_items)
+        self._vr_timer_sync()
+
+    # ------------------------------------------------------------------ VR panel: follow / world placement, in-headset controls
+    def _vr_timer_sync(self):
+        need = self.vr.active and self.prof["display"]["vr"].get("placement", "head") != "head"
+        if need and not self.vr_timer.isActive():
+            self._vr_t = time.monotonic(); self.vr_timer.start()
+        elif not need and self.vr_timer.isActive():
+            self.vr_timer.stop()
+
+    def _vr_tick(self):
+        now = time.monotonic()
+        dt, self._vr_t = now - self._vr_t, now
+        self.vr.update_pose(dt)
+
+    VR_STEPS = {"vr_left": ("side_m", -0.05), "vr_right": ("side_m", 0.05), "vr_up": ("height_m", 0.05),
+                "vr_down": ("height_m", -0.05), "vr_nearer": ("distance_m", -0.1), "vr_farther": ("distance_m", 0.1),
+                "vr_bigger": ("width_m", 0.1), "vr_smaller": ("width_m", -0.1)}
+    VR_LIMITS = {"side_m": (-1.5, 1.5), "height_m": (-1.0, 1.0), "distance_m": (0.5, 4.0), "width_m": (0.4, 3.0)}
+    VR_NAMES = {"side_m": "يمين/يسار", "height_m": "الارتفاع", "distance_m": "المسافة", "width_m": "العرض"}
+
+    def vr_adjust(self, action: str) -> bool:
+        """In-headset controls. Returns False when VR mode is not on (the shortcut is then ignored)."""
+        if self.prof["display"]["mode"] != "vr":
+            return False
+        v = self.prof["display"]["vr"]
+        if action in self.VR_STEPS:
+            key, step = self.VR_STEPS[action]
+            lo, hi = self.VR_LIMITS[key]
+            val = round(min(hi, max(lo, float(v.get(key, 0.0)) + step)), 2)
+            self.settings.update_profile(f"display.vr.{key}", val)
+            msg = f"{self.VR_NAMES[key]}: {val:+.2f} م" if key in ("side_m", "height_m") else f"{self.VR_NAMES[key]}: {val:.1f} م"
+        elif action == "vr_center":
+            self.vr.recenter(); msg = "أُعيدت اللوحة أمامك"
+        elif action == "vr_placement":
+            from .vr import PLACEMENTS
+            ids = [k for k, *_ in PLACEMENTS]
+            nxt = ids[(ids.index(v.get("placement", "head")) + 1) % len(ids)] if v.get("placement", "head") in ids else "head"
+            self.settings.update_profile("display.vr.placement", nxt)
+            self.vr.recenter()
+            msg = next(t for k, t, _ in PLACEMENTS if k == nxt)
+        else:
+            return False
+        self.apply_display()
+        self.vr_feedback(msg)
+        self.profile_changed.emit()
+        return True
+
+    def vr_feedback(self, msg: str):
+        """Show what changed inside the headset for a moment, then the subtitle again."""
+        if not self.vr.active:
+            return
+        self.vr.show_items([{"kind": "other", "label": "", "tr": msg, "src": ""}])
+        QTimer.singleShot(1200, lambda: self.vr.active and self.vr.show_items(self.last_items or [{"kind": "other", "label": "", "tr": "·", "src": ""}]))
 
     def toggle_overlay(self):
         self.overlay_hidden = not self.overlay_hidden
+        self.vr.set_hidden(self.overlay_hidden)
         if self.overlay_hidden:
-            self.overlay.hide(); self.vr.hide()
+            self.overlay.hide()
             self.toast("أُخفيت الترجمة — اضغط الاختصار نفسه لإظهارها")
         else:
             if self.last_items:
@@ -250,7 +308,7 @@ class Controller(QObject):
                 self.mode_changed.emit(); return
             self.overlay.clear()
         else:
-            self.vr.stop()
+            (self.vr.stop(), self._vr_timer_sync())
         self.settings.update_profile("display.mode", mode)
         if self.last_items:
             self._show(self.last_items)
@@ -262,6 +320,7 @@ class Controller(QObject):
             return True
         try:
             self.vr.start({**self.prof["display"]["vr"], "rtl": self.prof["lang"]["tgt"] in ("ar", "fa", "ur", "he")})
+            self._vr_timer_sync()
             return True
         except VRError as e:
             self.toast(str(e), err=True)
@@ -273,7 +332,7 @@ class Controller(QObject):
         self.vr.show_items([{"label": "Captain Mara", "label_tr": "القائدة مارا", "src": "Test", "tr": "هذه ترجمة تجريبية داخل النظارة"}])
         self.toast("أُرسلت ترجمة تجريبية إلى النظارة")
         if self.prof["display"]["mode"] != "vr":
-            QTimer.singleShot(6000, lambda: (self.prof["display"]["mode"] != "vr") and self.vr.stop())
+            QTimer.singleShot(6000, lambda: (self.prof["display"]["mode"] != "vr") and (self.vr.stop(), self._vr_timer_sync()))
 
     # ------------------------------------------------------------------ capture region
     def select_region(self):
@@ -348,7 +407,7 @@ class Controller(QObject):
         was_vr = self.vr.active
         self.apply_display()
         if self.prof["display"]["mode"] != "vr" and was_vr:
-            self.vr.stop()
+            (self.vr.stop(), self._vr_timer_sync())
         self.profile_changed.emit(); self.mode_changed.emit()
         self.restart_if_running()
         self.toast(("تم التبديل تلقائياً إلى إعدادات: " if auto else "إعدادات: ") + self.prof["name"])
@@ -385,7 +444,7 @@ class Controller(QObject):
     def _hotkey(self, action: str):
         {"toggle": self.toggle, "region": self.select_region, "hide": self.toggle_overlay,
          "mode": lambda: self.set_mode("screen" if self.prof["display"]["mode"] == "vr" else "vr"),
-         "retranslate": self.retranslate}.get(action, lambda: None)()
+         "retranslate": self.retranslate}.get(action, lambda: self.vr_adjust(action))()
 
     def setup_tray(self):
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -431,7 +490,7 @@ class Controller(QObject):
     def quit(self):
         self.quitting = True
         self.stop()
-        self.vr.stop()
+        (self.vr.stop(), self._vr_timer_sync())
         self.hotkeys.stop()
         self.store.close()
         QApplication.quit()
