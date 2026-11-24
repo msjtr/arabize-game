@@ -1861,8 +1861,8 @@ async function liveStart(kind){
   $("lvEmpty").hidden=true;$("lvBar").hidden=false;$("lvHint").hidden=false;$("lvStage").classList.add("on");
   LV.prev=null;LV.changed=true;LV.still=0;LV.seen="";drawSel();
   clearInterval(LV.timer);if(LV.worker)LV.worker.terminate();LV.worker=null;
-  try{LV.worker=new Worker(URL.createObjectURL(new Blob([`setInterval(()=>postMessage(0),${kind==="cam"?800:600})`],{type:"text/javascript"})));LV.worker.onmessage=liveTick}
-  catch(e){LV.timer=setInterval(liveTick,kind==="cam"?800:600)}
+  try{LV.worker=new Worker(URL.createObjectURL(new Blob([`setInterval(()=>postMessage(0),${kind==="cam"?500:250})`],{type:"text/javascript"})));LV.worker.onmessage=liveTick}
+  catch(e){LV.timer=setInterval(liveTick,kind==="cam"?500:250)}
   pipSync();pipUpdate();
   lvChip("يراقب الشاشة","live");setStatus("القراءة المباشرة تعمل: تُترجم النصوص كلما تغيّرت.","ok");
 }
@@ -1901,8 +1901,12 @@ async function liveTick(){
   if(LV.busy||!LV.stream)return;const c=liveFrame();if(!c)return;const g=grayThumb(c);
   let diff=255;if(LV.prev&&LV.prev.length===g.length){let s=0;for(let i=0;i<g.length;i++)s+=Math.abs(g[i]-LV.prev[i]);diff=s/g.length}
   LV.prev=g;const sens=LV.kind==="cam"?7:2.5;
-  if(diff>sens){LV.changed=true;LV.still=0;return}        // still moving: wait until the text settles
-  if(!LV.changed)return;LV.changed=false;await liveRead(c)}
+  const now=performance.now();
+  if(diff>sens){if(!LV.changed){LV.changed=true;LV.moveT=now}LV.still=0;
+    // a game picture rarely stands still (camera, water, effects): while it keeps moving, read anyway every ~0.9 s
+    if(now-LV.moveT>=900&&now-(LV.readT||0)>=900){LV.readT=now;await liveRead(c)}
+    return}
+  if(!LV.changed)return;LV.changed=false;LV.readT=now;await liveRead(c)}
 async function liveRead(c){
   LV.busy=true;lvChip("يقرأ النص…","live");const t0=performance.now();
   try{
