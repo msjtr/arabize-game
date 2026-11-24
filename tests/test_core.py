@@ -171,3 +171,40 @@ def test_vr_reports_missing_steamvr_cleanly():
     except VRError as e:
         assert "SteamVR" in str(e) or "OpenVR" in str(e)
     assert not v.active
+
+
+# ---------- engine speed ----------
+def test_slow_engine_is_overtaken_by_the_next_one(env):
+    import time as _t
+    from arabize.engines import Request
+    from conftest import Fake
+    s, st, m = env
+    m.HEDGE_S = 0.1
+    Fake.mode["google"] = "slow"                       # 350 ms
+    t = _t.perf_counter()
+    r = m.translate(Request("Open the old gate", "en", "ar"), use_memory=False)
+    ms = (_t.perf_counter() - t) * 1000
+    Fake.mode["google"] = "ok"
+    assert r.engine == "mymemory" and ms < 330, (r.engine, ms)
+
+
+def test_kept_alive_connection_is_reused(env):
+    import time as _t
+    from arabize.engines import Request
+    s, st, m = env
+    m.translate(Request("warm up", "en", "ar"), use_memory=False)
+    t = _t.perf_counter()
+    for i in range(20):
+        m.translate(Request(f"line number {i}", "en", "ar"), use_memory=False)
+    assert (_t.perf_counter() - t) / 20 < 0.05
+
+
+def test_change_detector_reads_text_over_a_moving_picture():
+    cd = ChangeDetector(sensitivity=3, stable_ms=120, max_wait_ms=250)
+    rng = np.random.default_rng(1)
+    t, fires = 0.0, 0
+    cd.update(np.zeros((200, 600, 3), np.uint8), t)
+    for _ in range(30):                     # 1.5 s of a picture that never settles
+        t += 0.05
+        fires += cd.update(rng.integers(0, 255, (200, 600, 3), dtype=np.uint8), t)
+    assert 4 <= fires <= 7                  # read about every 250 ms instead of never

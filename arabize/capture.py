@@ -280,17 +280,22 @@ def thumb(img: np.ndarray, width: int = 192) -> np.ndarray:
 
 
 class ChangeDetector:
-    """Says when the picture changed and then settled — the moment to run OCR.
+    """Says when to run OCR.
 
-    States: idle -> changing -> (stable for stable_ms) -> fire once -> idle.
+    Text that appears on a still screen is read once it settles (stable_ms). In a game the picture rarely stands
+    still (camera, water, particles), so while it keeps changing it is also read every max_wait_ms: fast dialogue
+    and text over moving scenes are caught instead of waiting forever for a calm frame.
     """
 
-    def __init__(self, sensitivity: float = 3.0, stable_ms: int = 250):
+    def __init__(self, sensitivity: float = 3.0, stable_ms: int = 120, max_wait_ms: int = 250):
         self.sensitivity = sensitivity
         self.stable_ms = stable_ms
+        self.max_wait_ms = max_wait_ms
         self.prev: np.ndarray | None = None
         self.changing = False
         self.still_since = 0.0
+        self.change_start = 0.0
+        self.last_fire = -1e9
         self.force = True  # first frame is always read
 
     def diff(self, t: np.ndarray) -> float:
@@ -298,21 +303,30 @@ class ChangeDetector:
             return 255.0
         return float(np.abs(t - self.prev).mean())
 
+    def _fire(self, now: float) -> bool:
+        self.last_fire = now
+        return True
+
     def update(self, img: np.ndarray, now: float) -> bool:
         t = thumb(img)
+        first = self.prev is None or self.prev.shape != t.shape
         d = self.diff(t)
         self.prev = t
-        if d >= self.sensitivity:
-            self.changing = True
-            self.still_since = now
-            return False
-        if self.force:
+        if first or self.force:
             self.force = False
             self.changing = False
-            return True
+            return self._fire(now)
+        if d >= self.sensitivity:
+            if not self.changing:
+                self.changing, self.change_start = True, now
+            self.still_since = now
+            wait = self.max_wait_ms / 1000
+            if self.max_wait_ms and now - self.change_start >= wait and now - self.last_fire >= wait:
+                return self._fire(now)          # keeps moving: read anyway
+            return False
         if self.changing and (now - self.still_since) * 1000 >= self.stable_ms:
             self.changing = False
-            return True
+            return self._fire(now)
         return False
 
     def trigger(self) -> None:

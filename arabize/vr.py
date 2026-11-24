@@ -10,6 +10,7 @@ import ctypes
 import math
 
 from . import render
+from .logs import log
 
 PLACEMENTS = [
     ("head", "أمام عينك دائماً", "ثابتة في مجال الرؤية، تتحرك مع رأسك"),
@@ -78,6 +79,64 @@ class VRError(RuntimeError):
     pass
 
 
+class VRNotRunning(VRError):
+    """SteamVR is installed but not running yet: start it and try again shortly."""
+
+
+# ------------------------------------------------------------------ helpers around SteamVR / OpenXR
+def _init_error_name(e) -> str:
+    return type(e).__name__
+
+
+def init_message(e) -> str:
+    n = _init_error_name(e)
+    if "HmdNotFound" in n:
+        return ("SteamVR يعمل لكن لا يرى النظارة. لنظارات Meta Quest: شغّل تطبيق Meta Quest Link على الكمبيوتر، "
+                "وفعّل Link من داخل النظارة، ثم شغّل SteamVR.")
+    if "InstallationNotFound" in n or "VRClientDLLNotFound" in n or "PathRegistryNotFound" in n:
+        return "SteamVR غير مثبت. ثبّته مجاناً من Steam (ابحث عن SteamVR) ثم أعد المحاولة."
+    if "NoServerForBackgroundApp" in n:
+        return "SteamVR غير مشغّل. أشغّله الآن…"
+    return f"تعذّر الاتصال بـ SteamVR ({n})"
+
+
+def launch_steamvr() -> bool:
+    """Ask Steam to start SteamVR (app 250820)."""
+    import os
+    import sys
+    if sys.platform != "win32":
+        return False
+    try:
+        os.startfile("steam://rungameid/250820")  # type: ignore[attr-defined]
+        return True
+    except OSError:
+        return False
+
+
+def openxr_runtime() -> str | None:
+    """Which runtime OpenXR games will use: 'steamvr', 'meta', 'wmr', 'other' or None (unknown)."""
+    import sys
+    if sys.platform != "win32":
+        return None
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Khronos\OpenXR\1") as k:
+            path = str(winreg.QueryValueEx(k, "ActiveRuntime")[0]).lower()
+    except OSError:
+        return None
+    if "steamvr" in path or "steamxr" in path:
+        return "steamvr"
+    if "oculus" in path or "meta" in path:
+        return "meta"
+    if "mixedreality" in path:
+        return "wmr"
+    return "other"
+
+
+OPENXR_HINT = ("ألعاب الواقع الافتراضي على Meta Quest Link تعمل الآن عبر برنامج Meta، فلا تظهر لوحة الترجمة داخلها. "
+               "لتظهر: افتح SteamVR ← الإعدادات ← OpenXR ← «اجعل SteamVR مشغّل OpenXR»، ثم شغّل اللعبة من جديد.")
+
+
 class VRSubtitle:
     KEY = "arabize.game.subtitle"
 
@@ -88,9 +147,12 @@ class VRSubtitle:
         self.handle = None
         self.style: dict = {}
         self._buf = None
+        self._files = 0
+        self._raw_ok = True
         self.hidden = False
         self.follower = Follower()
         self.world_pose: tuple[list[float], float] | None = None
+        self._pose = None
 
     @property
     def active(self) -> bool:
@@ -100,30 +162,54 @@ class VRSubtitle:
         try:
             import openvr  # type: ignore
         except Exception as e:
-            raise VRError(f"مكتبة OpenVR غير مثبتة: {e}")
+            raise VRError(f"مكتبة OpenVR غير موجودة في هذه النسخة: {e}")
         self.ovr = openvr
         try:
+            installed = openvr.isRuntimeInstalled()
+        except Exception:
+            installed = True
+        if not installed:
+            raise VRError("SteamVR غير مثبت. ثبّته مجاناً من Steam (ابحث عن SteamVR) ثم أعد المحاولة.")
+        # 1) is SteamVR already running? (a background check never starts it and answers at once)
+        try:
+            openvr.init(openvr.VRApplication_Background)
+            openvr.shutdown()
+        except openvr.error_code.InitError as e:
+            if "NoServerForBackgroundApp" in _init_error_name(e):
+                raise VRNotRunning(init_message(e))
+            raise VRError(init_message(e))
+        # 2) connect as an overlay
+        try:
             self.system = openvr.init(openvr.VRApplication_Overlay)
+        except openvr.error_code.InitError as e:
+            raise VRError(init_message(e))
         except Exception as e:
-            raise VRError("لم يُعثر على SteamVR. شغّل SteamVR والنظارة متصلة ثم أعد المحاولة. "
-                          f"(التفاصيل: {e})")
+            raise VRError(f"تعذّر الاتصال بـ SteamVR: {e}")
         self.overlay = openvr.IVROverlay()
         try:
             self.handle = self.overlay.createOverlay(self.KEY, "Arabize Game")
         except Exception:
-            self.handle = self.overlay.findOverlay(self.KEY)
+            self.handle = self.overlay.findOverlay(self.KEY)     # left over from an earlier run
+        self._pose = (openvr.TrackedDevicePose_t * 1)()
+        try:
+            self.overlay.setOverlaySortOrder(self.handle, 200)    # above other overlays
+            self.overlay.setOverlayAlpha(self.handle, 1.0)
+        except Exception:
+            pass
         self.apply_style(style)
-        self.overlay.showOverlay(self.handle)
 
     def apply_style(self, style: dict) -> None:
         self.style = dict(style)
         if not self.active:
             return
-        self.overlay.setOverlayWidthInMeters(self.handle, float(style.get("width_m", 1.1)))
-        if style.get("placement", "head") == "head":
-            self._place_head()
-        else:
-            self.update_pose(0.0, recenter=self.world_pose is None)
+        try:
+            self.overlay.setOverlayWidthInMeters(self.handle, float(style.get("width_m", 1.1)))
+            if style.get("placement", "head") == "head":
+                self._place_head()
+            else:
+                self.update_pose(0.0, recenter=self.world_pose is None)
+        except Exception as e:
+            log.warning("VR style: %s", e)
 
     def _matrix(self, rows):
         m = self.ovr.HmdMatrix34_t()
@@ -141,7 +227,7 @@ class VRSubtitle:
     def hmd_pose(self):
         """Current head pose as a 3x4 list, or None while the headset is not tracked."""
         try:
-            poses = self.system.getDeviceToAbsoluteTrackingPose(self.ovr.TrackingUniverseStanding, 0, 1)
+            poses = self.system.getDeviceToAbsoluteTrackingPose(self.ovr.TrackingUniverseStanding, 0, self._pose)
             p = poses[0]
             if not p.bPoseIsValid:
                 return None
@@ -167,7 +253,10 @@ class VRSubtitle:
             if recenter:
                 self.follower.pos = None
             pos, yaw = self.follower.step(pos, yaw, dt)
-        self.overlay.setOverlayTransformAbsolute(self.handle, self.ovr.TrackingUniverseStanding, self._matrix(pose_matrix(pos, yaw)))
+        try:
+            self.overlay.setOverlayTransformAbsolute(self.handle, self.ovr.TrackingUniverseStanding, self._matrix(pose_matrix(pos, yaw)))
+        except Exception:
+            pass
 
     def recenter(self):
         self.world_pose = None
@@ -179,6 +268,24 @@ class VRSubtitle:
         else:
             self.update_pose(0.0, recenter=True)
 
+    def poll(self) -> str | None:
+        """Read SteamVR's messages. Returns "quit" when SteamVR is closing (we let go at once so it can exit)."""
+        if not self.active:
+            return None
+        ev = self.ovr.VREvent_t()
+        try:
+            while self.system.pollNextEvent(ev):
+                if ev.eventType in (self.ovr.VREvent_Quit, getattr(self.ovr, "VREvent_DriverRequestedQuit", -1)):
+                    try:
+                        self.system.acknowledgeQuit_Exiting()
+                    except Exception:
+                        pass
+                    self.stop()
+                    return "quit"
+        except Exception as e:
+            log.warning("VR poll: %s", e)
+        return None
+
     def set_hidden(self, hidden: bool) -> None:
         self.hidden = hidden
         if not self.active:
@@ -188,16 +295,37 @@ class VRSubtitle:
         except Exception:
             pass
 
+    def _upload(self, img) -> None:
+        w, h = img.width(), img.height()
+        if self._raw_ok:
+            try:
+                # the buffer itself (not a pointer to it): pyopenvr passes byref(buffer) to SteamVR
+                self._buf = ctypes.create_string_buffer(bytes(img.constBits())[: w * h * 4], w * h * 4)
+                self.overlay.setOverlayRaw(self.handle, self._buf, w, h, 4)
+                return
+            except Exception as e:
+                log.warning("VR raw upload failed, using an image file instead: %s", e)
+                self._raw_ok = False
+        import os
+        import tempfile
+        self._files += 1
+        path = os.path.join(tempfile.gettempdir(), f"arabize_vr_{self._files % 3}.png")
+        img.save(path, "PNG")
+        self.overlay.setOverlayFromFile(self.handle, path)
+
     def show_items(self, items: list[dict]) -> None:
         if not self.active:
             return
         st = dict(self.style)
         img = render.render_image(items, st, 1400)
-        w, h = img.width(), img.height()
-        self._buf = ctypes.create_string_buffer(bytes(img.constBits())[: w * h * 4])
-        self.overlay.setOverlayRaw(self.handle, ctypes.cast(self._buf, ctypes.c_void_p), w, h, 4)
-        if not self.hidden:
-            self.overlay.showOverlay(self.handle)
+        if img.height() > 1080:                 # SteamVR's limit for one overlay picture
+            img = img.copy(0, img.height() - 1080, img.width(), 1080)
+        try:
+            self._upload(img)
+            if not self.hidden:
+                self.overlay.showOverlay(self.handle)
+        except Exception as e:
+            log.warning("VR show failed: %s", e)
 
     def hide(self) -> None:
         if self.active:

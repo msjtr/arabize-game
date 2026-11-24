@@ -349,6 +349,14 @@ class LookPage(Page):
         pr.addWidget(b_play); pr.addWidget(b_live); pr.addStretch(1)
         sv.addLayout(pr)
 
+        # ---- where the translation goes
+        cp, lp = card(gold=True); lp.addWidget(title("مكان الترجمة", "move"))
+        from ..overlay import PLACES
+        self.place = Chips([(k, n) for k, n, _ in PLACES]); self.place.changed.connect(self._place)
+        self.place_hint = hint("")
+        lp.addWidget(self.place); lp.addWidget(self.place_hint)
+        sv.addWidget(cp)
+
         # ---- templates
         ct, lt = card(gold=True); lt.addWidget(title("القوالب الجاهزة", "template"))
         lt.addWidget(hint("اختر قالباً بضغطة واحدة: يضبط الخط والألوان والخلفية والتأثيرات معاً. بعدها عدّل ما تريد، واحفظه قالباً خاصاً بك."))
@@ -475,6 +483,10 @@ class LookPage(Page):
             l3.addWidget(row(lab, w))
         b_vr = QPushButton(icons.icon("vr", theme.GOLD2), "  اختبر اللوحة في النظارة الآن"); b_vr.clicked.connect(ctrl.test_vr)
         l3.addWidget(b_vr)
+        l3.addWidget(hint("يشغّل البرنامج SteamVR بنفسه إن لم يكن يعمل، ويعيد الاتصال تلقائياً إذا أُغلق. "
+                          "لنظارات Meta Quest عبر Link أو Air Link: شغّل Meta Quest Link، ثم اجعل SteamVR مشغّل OpenXR "
+                          "(SteamVR ← الإعدادات ← OpenXR) حتى تظهر الترجمة داخل ألعاب Meta أيضاً. "
+                          "واختر في «الشاشات والالتقاط» نافذة اللعبة نفسها لتُقرأ نصوصها."))
         vv.addWidget(c3)
         c4, l4 = card(); l4.addWidget(title("التحكم وأنت داخل النظارة", "keyboard", "violet"))
         l4.addWidget(hint("تعمل هذه الاختصارات في وضع الواقع الافتراضي بدون نزع النظارة، وتحفظ التغيير لهذه اللعبة. "
@@ -496,6 +508,11 @@ class LookPage(Page):
         return h
 
     # ---------- saving ----------
+    def _place(self, k):
+        from ..overlay import PLACES
+        self.place_hint.setText({a: c for a, _, c in PLACES}.get(k, ""))
+        self._s("place", k)
+
     def _s(self, key, val, play: bool = False):
         self.ctrl.settings.update_profile(f"display.screen.{key}", val)
         if key in styles.LOOK_KEYS and self.prof["display"]["screen"].get("template") != "custom":
@@ -578,6 +595,8 @@ class LookPage(Page):
         self.accent.set(s.get("accent", "#E7B964"))
         self.opa.setValue(s["bg_opacity"]); self.box.set(s.get("box", "card")); self.tfx.set(s.get("text_fx", "shadow"))
         self.radius.setValue(s.get("radius", 16)); self.align.set(s.get("align", "center"))
+        from ..overlay import PLACES
+        self.place.set(s.get("place", "cover")); self.place_hint.setText({a: c for a, _, c in PLACES}.get(s.get("place", "cover"), ""))
         self.fx_in.set(s.get("fx_in", "fade")); self.fx_out.set(s.get("fx_out", "fade")); self.fx_ms.setValue(s.get("fx_ms", 260))
         self.anchor.setCurrentIndex(max(0, self.anchor.findData(s["anchor"])))
         self.offset.setValue(s["offset"]); self.width.setValue(s["width_pct"]); self.orig.setChecked(s["show_original"])

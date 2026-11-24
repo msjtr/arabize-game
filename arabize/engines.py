@@ -1,6 +1,8 @@
 """Translation engines + a manager that adds memory, retries, fallback and a circuit breaker."""
 from __future__ import annotations
 
+import concurrent.futures as cf
+import http.client
 import json
 import re
 import socket
@@ -25,17 +27,76 @@ class EngineError(RuntimeError):
         self.network = network
 
 
+_POOL = threading.local()       # one kept-alive connection per host per thread: saves the TLS handshake on every line
+
+
+def _conn(scheme: str, host: str, timeout: float):
+    pool = getattr(_POOL, "c", None)
+    if pool is None:
+        pool = _POOL.c = {}
+    key = (scheme, host)
+    c = pool.get(key)
+    if c is None:
+        cls = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+        c = pool[key] = cls(host, timeout=timeout)
+    c.timeout = timeout
+    if c.sock is not None:
+        c.sock.settimeout(timeout)
+    return c
+
+
+def _drop(scheme: str, host: str):
+    c = getattr(_POOL, "c", {}).pop((scheme, host), None)
+    if c is not None:
+        try:
+            c.close()
+        except Exception:
+            pass
+
+
+def _status_error(code: int, body: bytes):
+    text = body[:300].decode("utf-8", "replace")
+    if code in (401, 403):
+        raise EngineError(f"المفتاح مرفوض أو منتهي (HTTP {code})", retryable=False)
+    raise EngineError(f"HTTP {code}: {text}", retryable=code in (408, 425, 429, 500, 502, 503, 504, 529))
+
+
 def _http(url: str, data: bytes | None = None, headers: dict | None = None, timeout: float = 8) -> bytes:
-    req = urllib.request.Request(url, data=data, headers={"User-Agent": USER_AGENT, **(headers or {})})
+    hdrs = {"User-Agent": USER_AGENT, "Accept-Encoding": "identity", **(headers or {})}
+    u = urllib.parse.urlsplit(url)
+    if urllib.request.getproxies().get(u.scheme):      # a system proxy: let urllib route through it
+        return _http_urllib(url, data, hdrs, timeout)
+    path = (u.path or "/") + (f"?{u.query}" if u.query else "")
+    for attempt in (0, 1):
+        c = _conn(u.scheme, u.netloc, timeout)
+        try:
+            c.request("POST" if data is not None else "GET", path, body=data, headers=hdrs)
+            r = c.getresponse()
+            body = r.read()
+        except (http.client.RemoteDisconnected, http.client.BadStatusLine, BrokenPipeError, ConnectionResetError,
+                http.client.CannotSendRequest, http.client.ResponseNotReady) as e:
+            _drop(u.scheme, u.netloc)
+            if attempt == 0:          # the server closed a kept-alive connection: reconnect once at once
+                continue
+            raise EngineError(f"تعذّر الاتصال: {e}", retryable=True, network=True)
+        except (socket.timeout, TimeoutError, OSError) as e:
+            _drop(u.scheme, u.netloc)
+            raise EngineError(f"تعذّر الاتصال: {e}", retryable=True, network=True)
+        if r.will_close:
+            _drop(u.scheme, u.netloc)
+        if r.status >= 400:
+            _status_error(r.status, body)
+        return body
+    raise EngineError("تعذّر الاتصال", retryable=True, network=True)
+
+
+def _http_urllib(url: str, data: bytes | None, headers: dict, timeout: float) -> bytes:
+    req = urllib.request.Request(url, data=data, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.read()
     except urllib.error.HTTPError as e:
-        body = e.read()[:300].decode("utf-8", "replace")
-        retry = e.code in (408, 425, 429, 500, 502, 503, 504, 529)
-        if e.code in (401, 403):
-            raise EngineError(f"المفتاح مرفوض أو منتهي (HTTP {e.code})", retryable=False)
-        raise EngineError(f"HTTP {e.code}: {body}", retryable=retry)
+        _status_error(e.code, e.read())
     except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError, OSError) as e:
         raise EngineError(f"تعذّر الاتصال: {getattr(e, 'reason', e)}", retryable=True, network=True)
 
@@ -272,7 +333,8 @@ class AllEnginesFailed(RuntimeError):
 class Manager:
     """Memory → manual corrections → engines in the user's order, with retries and fallback."""
 
-    RETRIES = (0.35, 1.0)        # waits between attempts on the same engine
+    RETRIES = (0.15, 0.6)        # waits between attempts on the same engine
+    HEDGE_S = 1.2                # a backup engine starts if the first has not answered by then
     TRIP_AFTER = 3               # consecutive failures before an engine is rested
     REST_S = 45                  # how long a failing engine is skipped
 
@@ -284,6 +346,7 @@ class Manager:
         self._rest_until: dict[str, float] = {}
         self._lock = threading.Lock()
         self.overrides_endpoint: dict[str, str] = {}   # tests point engines at a local server
+        self._pool = cf.ThreadPoolExecutor(max_workers=8, thread_name_prefix="engine")
 
     def _engines(self) -> list[Engine]:
         cfg = self.settings.data["engines"]
@@ -303,6 +366,8 @@ class Manager:
         return {eid: ("rest" if self._rest_until.get(eid, 0) > now else "ok") for eid in ENGINES}
 
     def translate(self, req: Request, use_memory: bool = True) -> Result:
+        """Memory first. Otherwise the first engine in the user's order; if it has not answered within HEDGE_S the
+        next one starts too and the first good answer wins, so one slow server never holds the subtitle back."""
         t0 = time.perf_counter()
         terms = terms_in(req.text, req.glossary)
         req = replace(req, glossary=terms)
@@ -313,36 +378,66 @@ class Manager:
             if hit:
                 return Result(hit[0], hit[1].split(":")[-1], hit[1], None, (time.perf_counter() - t0) * 1000)
         errors: dict[str, str] = {}
-        network_only = True
+        network = []
         engines = self._engines()
         now = time.time()
         ready = [e for e in engines if self._rest_until.get(e.id, 0) <= now] or engines  # never skip all
-        for eng in ready:
-            for attempt in range(len(self.RETRIES) + 1):
+        pending: dict[cf.Future, Engine] = {}
+        nxt = 0
+
+        def launch():
+            nonlocal nxt
+            eng = ready[nxt]; nxt += 1
+            pending[self._pool.submit(self._attempt, eng, req, terms)] = eng
+
+        if ready:
+            launch()
+        while pending:
+            hedge = self.HEDGE_S if nxt < len(ready) else None
+            done, _ = cf.wait(list(pending), timeout=hedge, return_when=cf.FIRST_COMPLETED)
+            if not done:
+                launch()
+                continue
+            for f in done:
+                eng = pending.pop(f)
                 try:
-                    if terms and not eng.smart:
-                        # plain engines: hide the names behind tokens, translate, put the chosen names back
-                        masked, mapping = protect(req.text, terms)
-                        out, det = eng.translate(replace(req, text=masked))
-                        out = restore(out, mapping)
-                    else:
-                        out, det = eng.translate(req)   # smart engines get the dictionary in the prompt
-                    with self._lock:
-                        self._fails[eng.id] = 0
-                    self.store.put(req.text, req.src, req.tgt, mem_style, eng.id, out)
-                    return Result(out, eng.id, "engine", det, (time.perf_counter() - t0) * 1000)
+                    out, det = f.result()
                 except EngineError as e:
                     errors[eng.id] = str(e)
-                    network_only = network_only and e.network
-                    if not e.retryable or attempt == len(self.RETRIES):
-                        break
-                    self.sleep(self.RETRIES[attempt])
-            with self._lock:
-                self._fails[eng.id] = self._fails.get(eng.id, 0) + 1
-                if self._fails[eng.id] >= self.TRIP_AFTER:
-                    self._rest_until[eng.id] = time.time() + self.REST_S
+                    network.append(e.network)
+                    self._failed(eng.id)
+                    if nxt < len(ready):
+                        launch()
+                    continue
+                with self._lock:
                     self._fails[eng.id] = 0
-        raise AllEnginesFailed(errors, network=bool(errors) and network_only)
+                self.store.put(req.text, req.src, req.tgt, mem_style, eng.id, out)
+                return Result(out, eng.id, "engine", det, (time.perf_counter() - t0) * 1000)
+        raise AllEnginesFailed(errors, network=bool(errors) and all(network))
+
+    def _attempt(self, eng: "Engine", req: Request, terms) -> tuple[str, str | None]:
+        last = None
+        for attempt in range(len(self.RETRIES) + 1):
+            try:
+                if terms and not eng.smart:
+                    # plain engines: hide the names behind tokens, translate, put the chosen names back
+                    masked, mapping = protect(req.text, terms)
+                    out, det = eng.translate(replace(req, text=masked))
+                    return restore(out, mapping), det
+                return eng.translate(req)          # smart engines get the dictionary in the prompt
+            except EngineError as e:
+                last = e
+                if not e.retryable or attempt == len(self.RETRIES):
+                    break
+                self.sleep(self.RETRIES[attempt])
+        raise last  # type: ignore[misc]
+
+    def _failed(self, eid: str):
+        with self._lock:
+            self._fails[eid] = self._fails.get(eid, 0) + 1
+            if self._fails[eid] >= self.TRIP_AFTER:
+                self._rest_until[eid] = time.time() + self.REST_S
+                self._fails[eid] = 0
 
     def test_engines(self, sample: str = "Press any button to continue your adventure.", tgt: str = "ar") -> list[dict]:
         """Live check of every engine (ignores memory). Used by the diagnostics button."""

@@ -12,7 +12,7 @@ pip uninstall -y onnxruntime
 pip install --no-deps onnxruntime-directml || goto :err
 echo.
 echo === تشغيل الاختبارات ===
-python -m pytest -q tests\test_core.py tests\test_ocr.py tests\test_looks.py tests\test_windows.py || goto :err
+python -m pytest -q tests\test_core.py tests\test_ocr.py tests\test_looks.py tests\test_windows.py tests\test_v13.py || goto :err
 echo.
 echo === بناء البرنامج ===
 pyinstaller --noconfirm ArabizeGame.spec || goto :err

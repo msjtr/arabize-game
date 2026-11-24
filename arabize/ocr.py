@@ -48,9 +48,10 @@ def _prep(img: np.ndarray, min_h: int = 48, max_side: int = 2200, pad: int = 32)
 
 PERF_PRESETS = {
     # how often the screen is checked, how large the OCR detector looks, CPU threads
-    "light": {"interval_ms": 600, "stable_ms": 300, "ocr_side": 960, "threads": 1},
-    "balanced": {"interval_ms": 300, "stable_ms": 250, "ocr_side": 1280, "threads": 2},
-    "high": {"interval_ms": 150, "stable_ms": 200, "ocr_side": 1600, "threads": 4},
+    # poll_ms: how often a frame is compared (cheap); max_wait_ms: longest gap between reads while the picture moves
+    "light": {"interval_ms": 600, "stable_ms": 300, "ocr_side": 960, "threads": 1, "poll_ms": 90, "max_wait_ms": 600},
+    "balanced": {"interval_ms": 300, "stable_ms": 250, "ocr_side": 1280, "threads": 2, "poll_ms": 50, "max_wait_ms": 280},
+    "high": {"interval_ms": 150, "stable_ms": 200, "ocr_side": 1600, "threads": 4, "poll_ms": 33, "max_wait_ms": 150},
 }
 
 

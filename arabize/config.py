@@ -18,7 +18,7 @@ from . import styles
 
 APP_NAME_AR = "عرب لعبتك"
 APP_NAME_EN = "Arabize Game"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 
 def data_dir() -> Path:
@@ -86,6 +86,7 @@ DEFAULT_PROFILE = {
         "mode": "screen",           # "screen" or "vr"
         "screen": {
             "monitor": 1, "anchor": "bottom", "offset": 80, "width_pct": 70,
+            "place": "cover",       # cover / above: on the game's own text wherever it is; fixed: the subtitle box
             "custom_pos": None,     # [x, y] in logical pixels after the user drags it
             "font_family": styles.DEFAULT_FONT, "font_size": 26, "bold": True,
             "color": "#FFFFFF", "bg": "#0A0E1F", "bg_opacity": 80,

@@ -42,6 +42,9 @@ class Fake(BaseHTTPRequestHandler):
             Fake.mode[eng] = "ok"; self._send(503, {"error": "busy"}); return True
         if m == "drop":
             self.connection.close(); return True
+        if m == "slow":                     # a real server across the internet
+            import time
+            time.sleep(0.35)
         return False
 
     def do_GET(self):

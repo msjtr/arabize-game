@@ -19,7 +19,8 @@ from .pipeline import LiveTranslator
 from .platform_utils import IS_WIN, foreground_exe
 from .screens import RegionSelector, qscreen_for
 from .ui import icons, theme
-from .vr import VRError, VRSubtitle
+from .logs import log
+from .vr import OPENXR_HINT, VRError, VRNotRunning, VRSubtitle, launch_steamvr, openxr_runtime
 
 
 SAMPLE_ITEMS = styles.SAMPLE_ITEMS
@@ -47,6 +48,11 @@ class Controller(QObject):
         self.overlay.moved.connect(self._overlay_moved)
         self.vr = VRSubtitle()
         self.vr_timer = QTimer(self, interval=16); self.vr_timer.timeout.connect(self._vr_tick)
+        self.vr_events = QTimer(self, interval=250); self.vr_events.timeout.connect(self._vr_events)
+        self.vr_wait = QTimer(self, interval=3000); self.vr_wait.timeout.connect(self._vr_retry)
+        self._vr_wait_until = 0.0
+        self._xr_warned = False
+        self._vr_test_until = 0.0
         self._vr_t = time.monotonic()
         self.overlay_hidden = False
         self.last_items: list[dict] = []
@@ -315,20 +321,75 @@ class Controller(QObject):
         self.toast("وضع الواقع الافتراضي مفعّل" if mode == "vr" else "وضع الشاشة مفعّل")
         self.mode_changed.emit()
 
-    def _start_vr(self) -> bool:
+    def _start_vr(self, launch: bool = True) -> bool:
+        """Connect to SteamVR. If it is not running yet, start it and keep trying in the background (True = connected
+        or on the way)."""
         if self.vr.active:
             return True
         try:
             self.vr.start({**self.prof["display"]["vr"], "rtl": self.prof["lang"]["tgt"] in ("ar", "fa", "ur", "he")})
-            self._vr_timer_sync()
+        except VRNotRunning:
+            if not self.vr_wait.isActive():
+                started = launch and launch_steamvr()
+                self.toast("يشغّل SteamVR الآن… ستظهر الترجمة في النظارة حين يجهز" if started
+                           else "شغّل SteamVR وسأتصل به تلقائياً حين يعمل")
+                self._vr_wait_until = time.monotonic() + 180
+                self.vr_wait.start()
             return True
         except VRError as e:
+            log.warning("VR start: %s", e)
             self.toast(str(e), err=True)
             return False
+        self._vr_connected()
+        return True
+
+    def _vr_connected(self):
+        self.vr_wait.stop()
+        self.vr_events.start()
+        self._vr_timer_sync()
+        self.vr.set_hidden(self.overlay_hidden)
+        if self.last_items:
+            self.vr.show_items(self.last_items)
+        if openxr_runtime() == "meta" and not self._xr_warned:
+            self._xr_warned = True
+            QTimer.singleShot(2500, lambda: self.toast(OPENXR_HINT))
+        log.info("VR connected")
+
+    def _vr_retry(self):
+        wanted = self.prof["display"]["mode"] == "vr" or time.monotonic() < self._vr_test_until
+        if self.vr.active or not wanted or time.monotonic() > self._vr_wait_until:
+            self.vr_wait.stop()
+            return
+        try:
+            self.vr.start({**self.prof["display"]["vr"], "rtl": self.prof["lang"]["tgt"] in ("ar", "fa", "ur", "he")})
+        except VRNotRunning:
+            return
+        except VRError as e:              # running now but something else is wrong (e.g. headset not found yet)
+            log.info("VR not ready: %s", e)
+            return
+        self.toast("اتصلت بـ SteamVR — الترجمة تظهر الآن داخل النظارة")
+        self._vr_connected()
+        if self.prof["display"]["mode"] != "vr" and time.monotonic() < self._vr_test_until:
+            self._vr_test_until = 0.0
+            self.test_vr()
+
+    def _vr_events(self):
+        if not self.vr.active:
+            self.vr_events.stop()
+            return
+        if self.vr.poll() == "quit":
+            self.vr_events.stop(); self._vr_timer_sync()
+            if self.prof["display"]["mode"] == "vr":
+                self.toast("أُغلق SteamVR — سأعيد الاتصال تلقائياً حين يعمل من جديد")
+                self._vr_wait_until = time.monotonic() + 3600
+                self.vr_wait.start()
 
     def test_vr(self):
+        self._vr_test_until = time.monotonic() + 120
         if not self._start_vr():
             return
+        if not self.vr.active:
+            return                         # SteamVR is starting; the panel appears once connected
         self.vr.show_items([{"label": "Captain Mara", "label_tr": "القائدة مارا", "src": "Test", "tr": "هذه ترجمة تجريبية داخل النظارة"}])
         self.toast("أُرسلت ترجمة تجريبية إلى النظارة")
         if self.prof["display"]["mode"] != "vr":

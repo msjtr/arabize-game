@@ -137,3 +137,28 @@ def test_ocr_on_the_graphics_card():
     blocks = group_lines(o.read(img))
     assert max(similarity(b.text, exp["dialogue"]) for b in blocks) > 0.8
     RapidOcr(perf={**PERF_PRESETS["balanced"], "gpu": False})   # back to CPU for the other tests
+
+
+def test_in_place_cover_is_hidden_from_the_reader():
+    """The translation painted over the game text must not be read back, or the English would 'disappear'."""
+    import time
+    from PySide6.QtWidgets import QApplication
+    from arabize.capture import Capturer
+    from arabize.overlay import InPlaceOverlay
+    app = QApplication.instance() or QApplication([])
+    lab, exp = _show_scene(app)
+    cap = Capturer("auto")
+    img, box = cap.grab(1)
+    text0 = _read(img)
+    ov = InPlaceOverlay(); ov.configure({"font_size": 26, "bg": "#000000", "box": "card", "rtl": False}, "cover")
+    # cover the whole screen's middle with an opaque plate that says OVERLAYMARKER
+    ov.show_items([{"label": "", "src": "x", "tr": "OVERLAYMARKER OVERLAYMARKER", "abs": (200, 200, 1400, 600), "line_h": 60}])
+    for _ in range(10):
+        app.processEvents(); time.sleep(0.03)
+    try:
+        assert ov.excluded
+        img, box = cap.grab(1)
+        text1 = _read(img)
+        assert "OVERLAYMARKER" not in text1.upper()
+    finally:
+        cap.close(); ov.close(); lab.close()

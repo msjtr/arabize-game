@@ -225,6 +225,160 @@ class SubtitleOverlay(QWidget):
             self.clear(animate=False)
 
 
+# ------------------------------------------------------------------ translation drawn on the game text itself
+PLACES = [
+    ("cover", "فوق النص الأصلي", "تظهر الترجمة مكان الكلام نفسه وتغطيه، أينما كان في الشاشة"),
+    ("above", "أعلى النص الأصلي", "تظهر الترجمة فوق الكلام مباشرة، ويبقى الأصل ظاهراً تحتها"),
+    ("fixed", "في مكان ثابت", "صندوق ترجمة في المكان الذي تختاره (أسفل الشاشة مثلاً) مع الطبقات"),
+]
+
+
+def native_rect(qs) -> tuple[float, float, float, float, float]:
+    """(x, y, w, h, dpr) of a screen in physical pixels. Qt keeps a screen's top-left in native coordinates."""
+    g = qs.geometry()
+    d = qs.devicePixelRatio() or 1.0
+    return g.x(), g.y(), g.width() * d, g.height() * d, d
+
+
+def screen_for_point(px: float, py: float):
+    screens = QGuiApplication.screens()
+    for qs in screens:
+        x, y, w, h, _ = native_rect(qs)
+        if x <= px < x + w and y <= py < y + h:
+            return qs
+    return QGuiApplication.primaryScreen()
+
+
+def place_items(items, geo, origin, dpr, mode, measure, scale=1.0, natural=None):
+    """Where each translation goes, in logical pixels of one screen.
+
+    items carry "abs" = the source text's physical rectangle and "line_h" = its line height. measure(item, font_px,
+    width) -> height. "cover" centres the translation on the source text (hiding it); "above" puts it just above
+    (or below when there is no room). Boxes never overlap each other and never leave the screen."""
+    placed = []
+    for it in sorted(items, key=lambda i: (i["abs"][1], i["abs"][0])):
+        ax, ay, aw, ah = it["abs"]
+        x = geo[0] + (ax - origin[0]) / dpr
+        y = geo[1] + (ay - origin[1]) / dpr
+        w, h = aw / dpr, ah / dpr
+        lh = (it.get("line_h") or ah) / dpr
+        font = max(14.0, min(64.0, lh * 0.8 * scale))        # OCR boxes include ascenders: ~1.25x the type size
+        width = max(w + font * 1.2, font * 6)
+        if natural:     # as wide as the Arabic needs on one line, up to 1.6x the English line, then wrap
+            width = max(width, min(natural(it, font) + font * 1.6, max(w * 1.6, font * 14)))
+        width = min(geo[2] - 16, width)
+        bh = measure(it, font, width)
+        bx = x + w / 2 - width / 2
+        if mode == "above":
+            by = y - bh - font * 0.25
+            if by < geo[1] + 4:
+                by = y + h + font * 0.25
+        else:                                   # cover: at least the whole English block, centred on it
+            width = max(width, min(geo[2] - 16, w + font * 0.8))
+            bh = max(bh, h + font * 0.5)
+            by = y + h / 2 - bh / 2
+        bx = min(max(geo[0] + 4, bx), geo[0] + geo[2] - width - 4)
+        by = min(max(geo[1] + 4, by), geo[1] + geo[3] - bh - 4)
+        for px, py, pw, ph, _, _ in placed:      # keep boxes apart: push down below one that is in the way
+            if bx < px + pw and px < bx + width and by < py + ph and py < by + bh:
+                by = py + ph + 4
+        placed.append((bx, by, width, bh, font, it))
+    return placed
+
+
+class InPlaceOverlay(QWidget):
+    """One transparent, click-through window over the whole game screen. Each translation is painted exactly where
+    its English line is: in the middle of the screen, on the right, on a sign... wherever the game wrote it."""
+
+    def __init__(self):
+        super().__init__(None, FLAGS | Qt.WindowTransparentForInput)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WA_NoSystemBackground)
+        self.setWindowTitle("Arabize Game — in place")
+        self.style: dict = {}
+        self.mode = "cover"
+        self.qs = None
+        self.boxes: list = []
+        self.excluded = False
+        self._shown_once = False
+        self._top = QTimer(self, interval=1500, timeout=lambda: self.isVisible() and keep_on_top(int(self.winId())))
+        self._top.start()
+
+    def configure(self, style: dict, mode: str) -> None:
+        self.style, self.mode = dict(style), mode
+        if self.isVisible():
+            self.update()
+
+    def _item_style(self, font: float) -> dict:
+        st = dict(self.style)
+        st.update(font_size=font, max_lines=12, show_original=False, align="center")
+        if self.mode == "cover":
+            # hide the original completely so only Arabic is read
+            st["bg_opacity"] = 100
+            if st.get("box") in ("none", "bar", "bubble"):
+                st["box"] = "card"
+            st["radius"] = min(int(st.get("radius", 16)), 10)
+        return st
+
+    def _measure(self, it, font, width):
+        _, h = render.layout([it], self._item_style(font), width)
+        return h
+
+    def _natural(self, it, font):
+        from PySide6.QtGui import QFontMetricsF
+        st = self._item_style(font)
+        fm = QFontMetricsF(render._font(st, font, st.get("bold", True)))
+        return max(fm.horizontalAdvance(it.get("tr", "")), fm.horizontalAdvance(it.get("label_tr", "") or "") * 0.8)
+
+    def show_items(self, items: list[dict]) -> None:
+        items = [i for i in items if i.get("abs")]
+        if not items:
+            self.clear(); return
+        a = items[0]["abs"]
+        qs = screen_for_point(a[0] + a[2] / 2, a[1] + a[3] / 2)
+        if qs is not self.qs:
+            self.qs = qs
+            self.setGeometry(qs.geometry())
+        g = qs.geometry()
+        x, y, _, _, d = native_rect(qs)
+        scale = float(self.style.get("font_size", 26)) / 26.0
+        placed = place_items(items, (g.x(), g.y(), g.width(), g.height()), (x, y), d, self.mode, self._measure, scale,
+                             self._natural)
+        self.boxes = [(bx - g.x(), by - g.y(), w, h, f, it) for bx, by, w, h, f, it in placed]
+        if not self.isVisible():
+            self.show()
+            self.excluded = exclude_from_capture(int(self.winId()))
+            keep_on_top(int(self.winId()))
+        self.update()
+
+    def clear(self, animate: bool = True):
+        self.boxes = []
+        if self.isVisible():
+            self.update()
+            self.hide()
+
+    def physical_rects(self) -> list[tuple[int, int, int, int]]:
+        if not self.isVisible() or not self.qs:
+            return []
+        g = self.qs.geometry()
+        x0, y0, _, _, d = native_rect(self.qs)
+        return [(int(x0 + bx * d), int(y0 + by * d), int(w * d), int(h * d)) for bx, by, w, h, _, _ in self.boxes]
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        for bx, by, w, h, f, it in self.boxes:
+            st = self._item_style(f)
+            ops, hh = render.layout([it], st, w)
+            if self.mode == "cover":       # a solid plate over the whole English block, then the subtitle centred on it
+                bg = QColor(st.get("bg", "#0A0E1F")); bg.setAlpha(255)
+                p.setPen(Qt.NoPen); p.setBrush(bg)
+                p.drawRoundedRect(QRectF(bx, by, w, h), float(st.get("radius", 10)), float(st.get("radius", 10)))
+            render.paint(p, QRectF(bx, by + max(0.0, (h - hh) / 2), w, hh), [it], st, 1.0, ops)
+        p.end()
+
+
 class OverlayLayers(QObject):
     """All subtitle layers together. Same interface the controller used for the single overlay."""
     moved = Signal(str, list)     # layer, [x, y]
@@ -238,10 +392,14 @@ class OverlayLayers(QObject):
         self.split = True
         self.on = {k: True for k in styles.LAYER_IDS}
         self._last: dict[str, list] = {}
+        self.inplace = InPlaceOverlay()
+        self.place = "fixed"
 
     def configure(self, style: dict, qscreen) -> None:
         self.style = dict(style)
         self.split = bool(style.get("layers_on", True))
+        self.place = style.get("place", "cover")
+        self.inplace.configure(style, self.place)
         cfg = style.get("layers") or {}
         for k, w in self.layers.items():
             self.on[k] = k == "dialogue" or bool({**styles.DEFAULT_LAYERS[k], **cfg.get(k, {})}.get("on", True))
@@ -257,7 +415,23 @@ class OverlayLayers(QObject):
             out[k].append(it)
         return out
 
+    def in_place(self, items) -> bool:
+        return self.place in ("cover", "above") and bool(items) and all(i.get("abs") for i in items)
+
     def show_items(self, items: list[dict]) -> None:
+        if self.in_place(items):
+            for w in self.layers.values():
+                if w.isVisible():
+                    w.clear(animate=False)
+            self._last = {}
+            if self.place == "cover" and self.inplace.isVisible() and not self.inplace.excluded:
+                # this Windows cannot hide our window from the capture: covering the text would hide it from the
+                # reader too, so the translation goes just above it instead
+                self.inplace.configure(self.style, "above")
+            self.inplace.show_items(items)
+            return
+        if self.inplace.isVisible():
+            self.inplace.clear()
         parts = self.distribute(items)
         for k, w in self.layers.items():
             its = parts[k]
@@ -272,21 +446,27 @@ class OverlayLayers(QObject):
     def clear(self, animate: bool = True):
         for w in self.layers.values():
             w.clear(animate)
+        self.inplace.clear()
         self._last = {}
 
     def hide(self):
         for w in self.layers.values():
             w.hide()
+        self.inplace.hide()
 
     def isVisible(self) -> bool:
-        return any(w.isVisible() for w in self.layers.values())
+        return any(w.isVisible() for w in self.layers.values()) or self.inplace.isVisible()
 
     @property
     def excluded(self) -> bool:
-        return all(w.excluded for w in self.layers.values() if w.isVisible())
+        ws = [w for w in list(self.layers.values()) + [self.inplace] if w.isVisible()]
+        return all(w.excluded for w in ws)
 
     def physical_rects(self) -> list[tuple[int, int, int, int]]:
-        return [r for w in self.layers.values() if not w.excluded for r in [w.physical_rect()] if r]
+        out = [r for w in self.layers.values() if not w.excluded for r in [w.physical_rect()] if r]
+        if not self.inplace.excluded:
+            out += self.inplace.physical_rects()
+        return out
 
     def set_edit_mode(self, on: bool, layer: str = "dialogue") -> None:
         self.layers[layer].set_edit_mode(on)

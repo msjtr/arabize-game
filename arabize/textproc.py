@@ -55,10 +55,18 @@ class Line:
 class Block:
     lines: list[Line] = field(default_factory=list)
     label: str = ""          # speaker name or header ("Captain Mara", "QUEST") shown before the text
+    head: "Line | None" = None   # the line the label was read from (still part of the block's area)
 
     @property
     def text(self) -> str:
-        return " ".join(l.text for l in self.lines)
+        out = ""
+        for l in self.lines:
+            t = l.text.strip()
+            if out.endswith("-") and t[:1].islower() and out[-2:-1].isalpha():
+                out = out[:-1] + t            # a word broken over two lines: "adven-" + "ture"
+            else:
+                out = f"{out} {t}" if out else t
+        return out
 
     @property
     def full_text(self) -> str:
@@ -66,8 +74,9 @@ class Block:
 
     @property
     def box(self) -> tuple[float, float, float, float]:
-        x0 = min(l.x for l in self.lines); y0 = min(l.y for l in self.lines)
-        x1 = max(l.x + l.w for l in self.lines); y1 = max(l.y + l.h for l in self.lines)
+        ls = self.lines + ([self.head] if self.head else [])
+        x0 = min(l.x for l in ls); y0 = min(l.y for l in ls)
+        x1 = max(l.x + l.w for l in ls); y1 = max(l.y + l.h for l in ls)
         return x0, y0, x1 - x0, y1 - y0
 
 
@@ -107,6 +116,7 @@ def _split_label(b: Block) -> None:
     widest = max(l.w for l in rest)
     if (len(t.split()) <= 3 and len(t) <= 26 and t[-1:] not in ".!?,;" and first.w < widest * 0.6):
         b.label = t.rstrip(":：")
+        b.head = first
         b.lines = rest
 
 
