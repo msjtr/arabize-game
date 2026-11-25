@@ -16,6 +16,7 @@ GOLD = "#E7B964"
 GOLD2 = "#F6DCA0"
 ERR = "#FF7A6B"
 OK = "#6FE3B0"
+WARN = "#FFD166"
 
 FONTS = {"ui": "IBM Plex Sans Arabic", "display": "Alexandria"}
 

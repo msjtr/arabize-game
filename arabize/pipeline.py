@@ -19,11 +19,13 @@ import time
 
 from PySide6.QtCore import QThread, Signal
 
+from . import messages
+from .blend import sample_colors
 from .capture import Capturer, ChangeDetector
-from .engines import AllEnginesFailed, Manager, Request
+from .engines import AllEnginesFailed, Manager, Request, internet_reachable
 from .logs import log
 from .ocr import OcrError, create_ocr
-from .platform_utils import find_game_window, process_usage
+from .platform_utils import IS_WIN, find_game_window, process_usage
 from .textproc import TextTracker, classify, group_lines, normalize_key, similarity
 
 
@@ -39,13 +41,14 @@ def overlaps(a, b) -> bool:
 
 
 class LiveTranslator(QThread):
-    status = Signal(str, str)          # code, Arabic message: running|paused|offline|error|stopped|reading|translating
+    status = Signal(str, str)          # code, Arabic message: running|paused|offline|warn|error|stopped|reading|translating
     result = Signal(dict)              # see _emit
     cleared = Signal()                 # the game text disappeared from the screen
     metrics = Signal(dict)
 
     RETRY_OFFLINE_S = 3.0
-    GROW_WAIT_S = 0.45                 # text still being typed out is re-translated at most this often
+    GROW_WAIT_S = 0.4                 # text still being typed out is re-translated at most this often
+    KEEP_WARM_S = 20.0                 # idle this long: a tiny request keeps the connection to the service open
     SAME_TEXT = 0.92                   # OCR jitter: lines this similar are the same line
 
     def __init__(self, settings, store, manager: Manager, parent=None):
@@ -71,6 +74,8 @@ class LiveTranslator(QThread):
         self._shown_sig: tuple = ()
         self._last_hist = None
         self._offline = False
+        self._last_net = time.monotonic()
+        self._warm_busy = False
         self.stats = {"frames": 0, "reads": 0, "translations": 0, "cap_ms": 0.0, "ocr_ms": 0.0, "tr_ms": 0.0,
                       "screen_to_text_ms": 0.0}
 
@@ -95,6 +100,28 @@ class LiveTranslator(QThread):
     def set_exclusions(self, rects):
         self._exclusions = list(rects)
 
+    @staticmethod
+    def _method(prof) -> str:
+        """Capture method in use. With "show the translation in screenshots and recordings" on, "auto" reads the game
+        window itself (like OBS): the subtitle can then be visible to recorders without being read back as text."""
+        m = prof["capture"].get("method", "auto")
+        if m == "auto" and IS_WIN and prof["display"]["screen"].get("recordable", True):
+            return "window"
+        return m
+
+    def _keep_warm(self):
+        if self._warm_busy or time.monotonic() - self._last_net < self.KEEP_WARM_S:
+            return
+        self._warm_busy = True
+        self._last_net = time.monotonic()
+
+        def run():
+            try:
+                self.manager.keep_warm()
+            finally:
+                self._warm_busy = False
+        threading.Thread(target=run, daemon=True, name="keep-warm").start()
+
     # ---------- loop ----------
     def run(self):
         from .ocr import PERF_PRESETS
@@ -105,10 +132,11 @@ class LiveTranslator(QThread):
             self._ocr = create_ocr(prof["ocr"]["engine"], _ocr_lang(prof["lang"]["src"]), prof["ocr"]["min_conf"], perf)
         except OcrError as e:
             log.error("OCR start failed: %s", e)
-            self.status.emit("error", f"تعذّر تشغيل قراءة النص: {e}")
+            self.status.emit("error", messages.ocr_failure(str(e)))
             return
+        self.manager.warmup()
         cap_cfg = prof["capture"]
-        cap = Capturer(cap_cfg.get("method", "auto"))
+        cap = Capturer(self._method(prof))
         game, game_t = None, 0.0
         detector = ChangeDetector(cap_cfg["sensitivity"], min(cap_cfg["stable_ms"], 150), perf["max_wait_ms"])
         self.status.emit("running", f"يعمل ({self._ocr.name}) — بانتظار نص جديد")
@@ -126,8 +154,8 @@ class LiveTranslator(QThread):
                 continue
             try:
                 t0 = time.perf_counter()
-                if cap.method != c.get("method", "auto"):
-                    cap.close(); cap = Capturer(c.get("method", "auto"))
+                if cap.method != self._method(prof):
+                    cap.close(); cap = Capturer(self._method(prof))
                 if cap.method == "window" and time.monotonic() - game_t > 2.0:   # look the game window up every 2 s
                     game, game_t = find_game_window(prof.get("exe") or None), time.monotonic()
                 img, box = cap.grab(c["monitor"], None if c["full"] else c["region"], game)
@@ -145,12 +173,14 @@ class LiveTranslator(QThread):
                 self._publish()
             except Exception as e:  # never let one bad frame kill the loop
                 log.exception("capture/read loop error")
-                self.status.emit("error", f"خطأ أثناء الالتقاط: {e}")
-                self.msleep(1000)
+                self.status.emit("warn", messages.capture_failure(e))
+                self.msleep(500)
             if time.monotonic() - last_metrics > 1.0:
                 cpu, mem = process_usage()
-                self.metrics.emit({**stats, "cpu": cpu, "mem": mem, "engines": self.manager.engine_state()})
+                self.metrics.emit({**stats, "cpu": cpu, "mem": mem, "engines": self.manager.engine_state(),
+                                   "ping": self.manager.ping()})
                 last_metrics = time.monotonic()
+            self._keep_warm()
             spent = (time.perf_counter() - t_loop) * 1000
             poll = min(int(c["interval_ms"]), int(perf["poll_ms"]))
             self.msleep(int(max(15, poll - spent)))
@@ -182,8 +212,15 @@ class LiveTranslator(QThread):
         for b in blocks:
             x, y, w, h = b.box
             line_h = sorted(l.h for l in b.lines)[len(b.lines) // 2]
-            items.append({"label": b.label, "src": b.text, "box": b.box, "line_h": line_h,
-                          "abs": (box["left"] + x, box["top"] + y, w, h)})
+            it = {"label": b.label, "src": b.text, "box": b.box, "line_h": line_h,
+                  "abs": (box["left"] + x, box["top"] + y, w, h)}
+            try:
+                col = sample_colors(img, b.box)
+            except Exception:
+                col = None
+            if col:
+                it["game_bg"], it["game_fg"], it["game_flat"] = col["bg"], col["fg"], col["flat"]
+            items.append(it)
         for it, kind in zip(items, classify(items)):
             it["kind"] = kind
         now = time.monotonic()
@@ -265,21 +302,20 @@ class LiveTranslator(QThread):
                     self._inflight.discard(k)
                     self._fail_until[k] = time.monotonic() + self.RETRY_OFFLINE_S
             self._offline = True
-            if e.network:
-                self.status.emit("offline", "لا يوجد اتصال بالإنترنت — سأعيد المحاولة تلقائياً")
-            else:
-                log.warning("translation failed: %s", e)
-                self.status.emit("error", f"تعذّرت الترجمة: {e}")
+            log.warning("translation failed (network=%s): %s", e.network, e)
+            code, msg = messages.translate_failure(e.errors, e.network, internet_reachable() if e.network else None)
+            self.status.emit(code, msg)
             return
-        except Exception as e:  # pragma: no cover - a bug must not leave lines stuck "in flight"
+        except Exception:  # pragma: no cover - a bug must not leave lines stuck "in flight"
             log.exception("translation job failed")
             with self._lock:
                 for k in keys:
                     self._inflight.discard(k)
                     self._fail_until[k] = time.monotonic() + self.RETRY_OFFLINE_S
-            self.status.emit("error", f"تعذّرت الترجمة: {e}")
+            self.status.emit("warn", messages.SERVICE_BUSY)
             return
-        self._offline = False
+        self._last_net = time.monotonic()
+        was_offline, self._offline = self._offline, False
         prof = self.settings.profile
         with self._lock:
             for it in out:
@@ -301,7 +337,7 @@ class LiveTranslator(QThread):
         except Exception:  # history is a convenience; never lose the subtitle for it
             log.exception("history write failed")
         self._publish(engine, source)
-        self.status.emit("running", "يعمل — بانتظار نص جديد")
+        self.status.emit("running", messages.RECOVERED if was_offline else "يعمل — بانتظار نص جديد")
 
     def _retry_failed(self, prof):
         """Lines whose translation failed (offline) are tried again while they are still on screen."""
@@ -368,6 +404,7 @@ class LiveTranslator(QThread):
         tr_text = "\n".join((f"{it['label_tr']}: " if it["label"] else "") + it["tr"] for it in items)
         src_text = "\n".join((f"{it['label']}: " if it["label"] else "") + it["src"] for it in items)
         self.result.emit({"items": items, "engine": engine or items[-1].get("engine", ""), "source": source or items[-1].get("source", "engine"),
+                          "capture": self.stats.get("capture", ""),
                           "text": tr_text, "src_text": src_text, "history_id": self._last_hist,
                           "ms": {"ocr": round(self.stats["ocr_ms"]), "tr": round(self.stats["tr_ms"]),
                                  "total": round(self.stats["screen_to_text_ms"])}})

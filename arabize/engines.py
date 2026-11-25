@@ -27,31 +27,78 @@ class EngineError(RuntimeError):
         self.network = network
 
 
-_POOL = threading.local()       # one kept-alive connection per host per thread: saves the TLS handshake on every line
+_IDLE: dict[tuple[str, str], list] = {}   # kept-alive connections shared by all threads: no TLS handshake per line
+_IDLE_LOCK = threading.Lock()
+_IDLE_MAX = 4
+LATENCY: dict[str, float] = {}            # host -> smoothed round trip of a request (ms): the "ping" to that service
+_LAT_LOCK = threading.Lock()
 
 
-def _conn(scheme: str, host: str, timeout: float):
-    pool = getattr(_POOL, "c", None)
-    if pool is None:
-        pool = _POOL.c = {}
-    key = (scheme, host)
-    c = pool.get(key)
+def _take(scheme: str, host: str, timeout: float):
+    with _IDLE_LOCK:
+        lst = _IDLE.get((scheme, host))
+        c = lst.pop() if lst else None
     if c is None:
         cls = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
-        c = pool[key] = cls(host, timeout=timeout)
+        c = cls(host, timeout=timeout)
     c.timeout = timeout
     if c.sock is not None:
-        c.sock.settimeout(timeout)
+        try:
+            c.sock.settimeout(timeout)
+        except OSError:
+            pass
     return c
 
 
+def _give(scheme: str, host: str, c) -> None:
+    with _IDLE_LOCK:
+        lst = _IDLE.setdefault((scheme, host), [])
+        if len(lst) < _IDLE_MAX:
+            lst.append(c)
+            return
+    _close(c)
+
+
+def _close(c) -> None:
+    try:
+        c.close()
+    except Exception:
+        pass
+
+
 def _drop(scheme: str, host: str):
-    c = getattr(_POOL, "c", {}).pop((scheme, host), None)
-    if c is not None:
+    """Forget every idle connection to a host (it is not answering)."""
+    with _IDLE_LOCK:
+        lst = _IDLE.pop((scheme, host), [])
+    for c in lst:
+        _close(c)
+
+
+def note_latency(host: str, ms: float) -> None:
+    with _LAT_LOCK:
+        old = LATENCY.get(host)
+        LATENCY[host] = ms if old is None else old * 0.7 + ms * 0.3
+
+
+def open_connections(url: str, n: int = 2, timeout: float = 4.0) -> int:
+    """Open n connections to the host of url ahead of time (TCP + TLS), so the first line is not slowed by them."""
+    u = urllib.parse.urlsplit(url)
+    if urllib.request.getproxies().get(u.scheme):
+        return 0
+    opened = 0
+    for _ in range(n):
+        cls = http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection
+        c = cls(u.netloc, timeout=timeout)
         try:
-            c.close()
-        except Exception:
-            pass
+            t = time.perf_counter()
+            c.connect()
+            note_latency(u.netloc, (time.perf_counter() - t) * 1000)
+        except (OSError, http.client.HTTPException):
+            _close(c)
+            break
+        _give(u.scheme, u.netloc, c)
+        opened += 1
+    return opened
 
 
 def _status_error(code: int, body: bytes):
@@ -68,26 +115,47 @@ def _http(url: str, data: bytes | None = None, headers: dict | None = None, time
         return _http_urllib(url, data, hdrs, timeout)
     path = (u.path or "/") + (f"?{u.query}" if u.query else "")
     for attempt in (0, 1):
-        c = _conn(u.scheme, u.netloc, timeout)
+        c = _take(u.scheme, u.netloc, timeout)
+        reused = c.sock is not None
+        t0 = time.perf_counter()
         try:
             c.request("POST" if data is not None else "GET", path, body=data, headers=hdrs)
             r = c.getresponse()
             body = r.read()
         except (http.client.RemoteDisconnected, http.client.BadStatusLine, BrokenPipeError, ConnectionResetError,
                 http.client.CannotSendRequest, http.client.ResponseNotReady) as e:
-            _drop(u.scheme, u.netloc)
-            if attempt == 0:          # the server closed a kept-alive connection: reconnect once at once
+            _close(c)
+            if attempt == 0 and reused:   # the server closed a kept-alive connection: reconnect once at once
                 continue
             raise EngineError(f"تعذّر الاتصال: {e}", retryable=True, network=True)
         except (socket.timeout, TimeoutError, OSError) as e:
+            _close(c)
             _drop(u.scheme, u.netloc)
             raise EngineError(f"تعذّر الاتصال: {e}", retryable=True, network=True)
+        note_latency(u.netloc, (time.perf_counter() - t0) * 1000)
         if r.will_close:
-            _drop(u.scheme, u.netloc)
+            _close(c)
+        else:
+            _give(u.scheme, u.netloc, c)
         if r.status >= 400:
             _status_error(r.status, body)
         return body
     raise EngineError("تعذّر الاتصال", retryable=True, network=True)
+
+
+def internet_reachable(timeout: float = 1.5) -> bool | None:
+    """Quick check that tells "this PC is offline" from "one translation service is down". None = unknown."""
+    for host, port in (("1.1.1.1", 443), ("8.8.8.8", 443)):
+        try:
+            socket.create_connection((host, port), timeout=timeout).close()
+            return True
+        except OSError:
+            continue
+    try:
+        socket.getaddrinfo("www.google.com", 443)
+        return None
+    except OSError:
+        return False
 
 
 def _http_urllib(url: str, data: bytes | None, headers: dict, timeout: float) -> bytes:
@@ -334,7 +402,7 @@ class Manager:
     """Memory → manual corrections → engines in the user's order, with retries and fallback."""
 
     RETRIES = (0.15, 0.6)        # waits between attempts on the same engine
-    HEDGE_S = 1.2                # a backup engine starts if the first has not answered by then
+    HEDGE_S = 0.6                # a backup engine starts if the first has not answered by then
     TRIP_AFTER = 3               # consecutive failures before an engine is rested
     REST_S = 45                  # how long a failing engine is skipped
 
@@ -359,6 +427,41 @@ class Manager:
                 e.endpoint = self.overrides_endpoint[eid]  # type: ignore[misc]
             if e.available():
                 out.append(e)
+        return out
+
+    # ---------- connection: warm up, keep warm, ping ----------
+    @staticmethod
+    def _host(e: "Engine") -> str:
+        return urllib.parse.urlsplit(getattr(e, "endpoint", "") or "").netloc
+
+    def warmup(self) -> None:
+        """Open connections to the services in use before the first line arrives (runs in the background)."""
+        def run():
+            for e in self._engines()[:2]:
+                ep = getattr(e, "endpoint", "")
+                if ep:
+                    open_connections(ep, 2, timeout=float(self.settings.data["engines"].get("timeout_s", 6)))
+        threading.Thread(target=run, daemon=True, name="engine-warmup").start()
+
+    def keep_warm(self) -> None:
+        """Called every ~20 s while translating: a tiny request keeps the connection open (servers close idle ones)
+        and refreshes the ping, so the next line does not pay for a new connection."""
+        engines = [e for e in self._engines() if not e.smart and self._rest_until.get(e.id, 0) <= time.time()]
+        if not engines:
+            return
+        e = engines[0]
+        try:
+            e.translate(Request("OK", "en", self.settings.profile["lang"]["tgt"] if self.settings.profile else "ar"))
+        except Exception:
+            pass
+
+    def ping(self) -> dict[str, int]:
+        """Smoothed round trip (ms) to each enabled service that has been used, e.g. {"google": 84}."""
+        out = {}
+        for e in self._engines():
+            ms = LATENCY.get(self._host(e))
+            if ms is not None:
+                out[e.id] = int(round(ms))
         return out
 
     def engine_state(self) -> dict[str, str]:

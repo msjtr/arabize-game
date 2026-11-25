@@ -27,8 +27,19 @@ jobs:
           pip uninstall -y onnxruntime
           pip install --no-deps onnxruntime-directml
           python -c "import onnxruntime as o; print('providers', o.get_available_providers())"
+      - name: Fetch PresentMon (FPS readout; Intel, MIT licence)
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force -Path vendor | Out-Null
+          gh release download --repo GameTechDev/PresentMon --pattern "PresentMon-*-x64.exe" --dir vendor --clobber
+          $f = Get-ChildItem vendor -Filter "PresentMon-*-x64.exe" | Sort-Object Name -Descending | Select-Object -First 1
+          Copy-Item $f.FullName vendor/PresentMon.exe -Force
+          Get-ChildItem vendor | Format-Table Name, Length
       - name: Tests on real Windows (core, engines, OCR, looks, Windows-only features)
-        run: python -m pytest -q tests/test_core.py tests/test_ocr.py tests/test_looks.py tests/test_render.py tests/test_windows.py tests/test_v12.py tests/test_v13.py tests/test_live.py
+        run: python -m pytest -q tests/test_core.py tests/test_ocr.py tests/test_looks.py tests/test_render.py tests/test_windows.py tests/test_v12.py tests/test_v13.py tests/test_v14.py tests/test_live.py
       - name: Build exe
         run: pyinstaller --noconfirm ArabizeGame.spec
       - name: Smoke test the built app and photograph it

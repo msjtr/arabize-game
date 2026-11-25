@@ -18,7 +18,7 @@ from . import styles
 
 APP_NAME_AR = "عرب لعبتك"
 APP_NAME_EN = "Arabize Game"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 
 
 def data_dir() -> Path:
@@ -58,6 +58,9 @@ DEFAULT_HOTKEYS = {
     "hide": "Ctrl+Shift+H",         # hide / show the subtitle
     "mode": "Ctrl+Shift+V",         # switch screen <-> VR
     "retranslate": "Ctrl+Shift+E",  # translate what is on screen now
+    "size_up": "Ctrl+Shift+U",      # bigger translation text (screen or headset), saved for this game
+    "size_down": "Ctrl+Shift+J",    # smaller translation text
+    "hud": "Ctrl+Shift+F",          # show / hide the performance readout (FPS, CPU temperature, ping)
     # inside the headset (VR mode): move, size and place the panel without taking the headset off
     "vr_left": "Ctrl+Shift+Left", "vr_right": "Ctrl+Shift+Right", "vr_up": "Ctrl+Shift+Up", "vr_down": "Ctrl+Shift+Down",
     "vr_nearer": "Ctrl+Shift+PgUp", "vr_farther": "Ctrl+Shift+PgDown",
@@ -87,6 +90,9 @@ DEFAULT_PROFILE = {
         "screen": {
             "monitor": 1, "anchor": "bottom", "offset": 80, "width_pct": 70,
             "place": "cover",       # cover / above: on the game's own text wherever it is; fixed: the subtitle box
+            "blend": True,          # cover: use the game's own colours, so the Arabic looks like part of the game
+            "steady": True,         # the subtitle box keeps one size and place instead of resizing with every line
+            "recordable": True,     # the translation shows in screenshots and recordings (Game Bar, OBS, Discord)
             "custom_pos": None,     # [x, y] in logical pixels after the user drags it
             "font_family": styles.DEFAULT_FONT, "font_size": 26, "bold": True,
             "color": "#FFFFFF", "bg": "#0A0E1F", "bg_opacity": 80,
@@ -122,11 +128,14 @@ DEFAULT_SETTINGS = {
         "enabled": {"google": True, "mymemory": True, "claude": False, "deepl": False},
         "claude_key": "", "claude_model": "claude-haiku-5-5",
         "deepl_key": "", "mymemory_email": "",
-        "timeout_s": 8,
+        "timeout_s": 6,
     },
     "profiles": {"default": DEFAULT_PROFILE},
     "templates": {},                # the user's own saved looks: id -> {name, desc, look}
     "performance": {"preset": "balanced", "gpu": False},   # light | balanced | high; gpu = OCR on the graphics card
+    # performance readout over the game: which readings, and in which corner
+    "hud": {"on": False, "corner": "top-left", "fps": True, "cpu_temp": True, "gpu_temp": True, "cpu": True,
+            "ram": True, "ping": True, "scale": 100},
 }
 
 

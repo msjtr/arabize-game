@@ -10,7 +10,7 @@ from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
 from . import render, styles
-from .platform_utils import exclude_from_capture, keep_on_top
+from .platform_utils import keep_on_top, set_capture_visible
 
 FLAGS = Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.WindowDoesNotAcceptFocus
 LAYER_NAMES = {k: n for k, n, _ in styles.LAYERS}
@@ -74,6 +74,9 @@ class SubtitleOverlay(QWidget):
         self._anim.valueChanged.connect(self._on_t)
         self._anim.finished.connect(self._anim_done)
         self.excluded = False
+        self._reserve = 0.0        # steady box: height kept for the subtitle so the window does not resize per line
+        self._cy = 0.0             # where the text sits inside the steady box
+        self._geo = None
         # a game entering fullscreen can push topmost windows down; raise the layer again while it shows text
         self._top = QTimer(self, interval=1500, timeout=lambda: self.isVisible() and keep_on_top(int(self.winId())))
         self._top.start()
@@ -82,7 +85,14 @@ class SubtitleOverlay(QWidget):
     def configure(self, style: dict, qscreen) -> None:
         self.style = dict(style)
         self.screen_obj = qscreen
+        self._reserve = 0.0
         self._relayout()
+        if self.isVisible():
+            self._capture_mode()
+
+    def _capture_mode(self):
+        """Visible in screenshots/recordings, or hidden from every capture (the old behaviour)."""
+        self.excluded = set_capture_visible(int(self.winId()), bool(self.style.get("recordable", True)))
 
     def show_items(self, items: list[dict], animate: bool = True) -> None:
         self._leaving = False
@@ -90,7 +100,7 @@ class SubtitleOverlay(QWidget):
         self._relayout()
         if not self.isVisible():
             self.show()
-            self.excluded = exclude_from_capture(int(self.winId()))
+            self._capture_mode()
         fx, ms = self.style.get("fx_in", "fade"), int(self.style.get("fx_ms", 260))
         if fx == "type":
             # typing speed follows the amount of text, so long lines do not crawl and short ones do not flash
@@ -134,7 +144,7 @@ class SubtitleOverlay(QWidget):
         self._relayout()
         if vis or on:
             self.show()
-            self.excluded = exclude_from_capture(int(self.winId()))
+            self._capture_mode()
             if on:
                 self.activateWindow(); self.setFocus()
         self.update()
@@ -154,17 +164,36 @@ class SubtitleOverlay(QWidget):
         self._ops, h = render.layout(self.items or [{"tr": " "}], self.style, width)
         h = min(h, geo.height() * 0.6)
         self._h = h
+        box_h, self._cy = h, 0.0
+        if self.style.get("steady", True) and not self._edit:
+            # one window size for every line: reserve room for a few lines once, then only the text changes
+            if not self._reserve:
+                n = max(1, min(3, int(self.style.get("max_lines", 4))))
+                sample = [{"kind": "dialogue", "label": "", "tr": "نص"} for _ in range(n)]
+                self._reserve = min(geo.height() * 0.6, render.layout(sample, self.style, width)[1])
+            self._reserve = max(self._reserve, h)
+            box_h = self._reserve
+            v = self.style.get("anchor", "bottom").partition("-")[0]
+            if self.style.get("custom_pos") or v == "top":
+                self._cy = 0.0
+            elif v == "bottom":
+                self._cy = box_h - h
+            else:
+                self._cy = (box_h - h) / 2
         # room for the slide/zoom effects and the glow so nothing is clipped while animating
         m = int(self.style.get("font_size", 26) * 0.6)
         pos = self.style.get("custom_pos")
         if pos:
             x, y = pos[0] + m, pos[1] + m
         else:
-            x, y = anchor_xy(geo, width, h, self.style.get("anchor", "bottom"), self.style.get("offset", 80))
+            x, y = anchor_xy(geo, width, box_h, self.style.get("anchor", "bottom"), self.style.get("offset", 80))
         x = min(max(geo.x(), x), geo.x() + geo.width() - width)
-        y = min(max(geo.y(), y), geo.y() + geo.height() - h)
+        y = min(max(geo.y(), y), geo.y() + geo.height() - box_h)
         self._margin = m
-        self.setGeometry(int(x - m), int(y - m), int(width + 2 * m), int(h + 2 * m))
+        g = (int(x - m), int(y - m), int(width + 2 * m), int(box_h + 2 * m))
+        if g != self._geo or self.geometry().getRect() != g:
+            self._geo = g
+            self.setGeometry(*g)
 
     # ---------- painting ----------
     def _on_t(self, v):
@@ -183,7 +212,9 @@ class SubtitleOverlay(QWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         m = getattr(self, "_margin", 0)
-        box = QRectF(m, m, self.width() - 2 * m, self.height() - 2 * m)
+        box = QRectF(m, m + self._cy, self.width() - 2 * m, self._h)
+        if self._edit:
+            box = QRectF(m, m, self.width() - 2 * m, self.height() - 2 * m)
         if self.items:
             e = self.effect_state()
             p.save()
@@ -286,6 +317,23 @@ def place_items(items, geo, origin, dpr, mode, measure, scale=1.0, natural=None)
     return placed
 
 
+def steady_boxes(boxes: list[tuple], prev: dict[str, tuple]) -> list[tuple]:
+    """The same line read again a few pixels off (OCR jitter) keeps its previous box and font size, so the Arabic
+    stays still on the game text instead of trembling; a real move or a new line takes the new box."""
+    out = []
+    for b in boxes:
+        bx, by, w, h, f, it = b
+        old = prev.get(it.get("key") or it.get("src", ""))
+        if old:
+            ox, oy, ow, oh, of, _ = old
+            near = abs(bx - ox) <= max(10, ow * 0.04) and abs(by - oy) <= max(8, oh * 0.25)
+            same_size = abs(w - ow) <= max(14, ow * 0.12) and abs(h - oh) <= max(8, oh * 0.2) and abs(f - of) <= of * 0.12
+            if near and same_size:
+                b = (ox, oy, ow, oh, of, it)
+        out.append(b)
+    return out
+
+
 class InPlaceOverlay(QWidget):
     """One transparent, click-through window over the whole game screen. Each translation is painted exactly where
     its English line is: in the middle of the screen, on the right, on a sign... wherever the game wrote it."""
@@ -302,15 +350,20 @@ class InPlaceOverlay(QWidget):
         self.boxes: list = []
         self.excluded = False
         self._shown_once = False
+        self._prev: dict[str, tuple] = {}     # key -> last box, so OCR jitter does not make the Arabic wobble
         self._top = QTimer(self, interval=1500, timeout=lambda: self.isVisible() and keep_on_top(int(self.winId())))
         self._top.start()
 
     def configure(self, style: dict, mode: str) -> None:
         self.style, self.mode = dict(style), mode
         if self.isVisible():
+            self.excluded = set_capture_visible(int(self.winId()), bool(self.style.get("recordable", True)))
             self.update()
 
-    def _item_style(self, font: float) -> dict:
+    def blends(self, it: dict | None) -> bool:
+        return bool(self.mode == "cover" and self.style.get("blend", True) and it and it.get("game_bg"))
+
+    def _item_style(self, font: float, it: dict | None = None) -> dict:
         st = dict(self.style)
         st.update(font_size=font, max_lines=12, show_original=False, align="center")
         if self.mode == "cover":
@@ -319,15 +372,19 @@ class InPlaceOverlay(QWidget):
             if st.get("box") in ("none", "bar", "bubble"):
                 st["box"] = "card"
             st["radius"] = min(int(st.get("radius", 16)), 10)
+            if self.blends(it):
+                # in the game's own colours, on the game's own background: reads like an official localisation
+                st.update(box="none", bg=it["game_bg"], color=it["game_fg"], accent=it["game_fg"],
+                          text_fx="none" if it.get("game_flat") else "shadow")
         return st
 
     def _measure(self, it, font, width):
-        _, h = render.layout([it], self._item_style(font), width)
+        _, h = render.layout([it], self._item_style(font, it), width)
         return h
 
     def _natural(self, it, font):
         from PySide6.QtGui import QFontMetricsF
-        st = self._item_style(font)
+        st = self._item_style(font, it)
         fm = QFontMetricsF(render._font(st, font, st.get("bold", True)))
         return max(fm.horizontalAdvance(it.get("tr", "")), fm.horizontalAdvance(it.get("label_tr", "") or "") * 0.8)
 
@@ -345,15 +402,17 @@ class InPlaceOverlay(QWidget):
         scale = float(self.style.get("font_size", 26)) / 26.0
         placed = place_items(items, (g.x(), g.y(), g.width(), g.height()), (x, y), d, self.mode, self._measure, scale,
                              self._natural)
-        self.boxes = [(bx - g.x(), by - g.y(), w, h, f, it) for bx, by, w, h, f, it in placed]
+        self.boxes = steady_boxes([(bx - g.x(), by - g.y(), w, h, f, it) for bx, by, w, h, f, it in placed], self._prev)
+        self._prev = {b[5].get("key") or b[5].get("src", ""): b for b in self.boxes}
         if not self.isVisible():
             self.show()
-            self.excluded = exclude_from_capture(int(self.winId()))
+            self.excluded = set_capture_visible(int(self.winId()), bool(self.style.get("recordable", True)))
             keep_on_top(int(self.winId()))
         self.update()
 
     def clear(self, animate: bool = True):
         self.boxes = []
+        self._prev = {}
         if self.isVisible():
             self.update()
             self.hide()
@@ -369,12 +428,20 @@ class InPlaceOverlay(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         for bx, by, w, h, f, it in self.boxes:
-            st = self._item_style(f)
+            st = self._item_style(f, it)
             ops, hh = render.layout([it], st, w)
             if self.mode == "cover":       # a solid plate over the whole English block, then the subtitle centred on it
                 bg = QColor(st.get("bg", "#0A0E1F")); bg.setAlpha(255)
-                p.setPen(Qt.NoPen); p.setBrush(bg)
-                p.drawRoundedRect(QRectF(bx, by, w, h), float(st.get("radius", 10)), float(st.get("radius", 10)))
+                rad = float(st.get("radius", 10))
+                p.setPen(Qt.NoPen)
+                if self.blends(it):        # soft edges melt into the game's background instead of a hard card
+                    feather = max(3, min(10, int(f * 0.35)))
+                    for i in range(feather, 0, -1):
+                        c = QColor(bg); c.setAlpha(64)
+                        p.setBrush(c)
+                        p.drawRoundedRect(QRectF(bx - i, by - i, w + 2 * i, h + 2 * i), rad + i, rad + i)
+                p.setBrush(bg)
+                p.drawRoundedRect(QRectF(bx, by, w, h), rad, rad)
             render.paint(p, QRectF(bx, by + max(0.0, (h - hh) / 2), w, hh), [it], st, 1.0, ops)
         p.end()
 
@@ -394,6 +461,9 @@ class OverlayLayers(QObject):
         self._last: dict[str, list] = {}
         self.inplace = InPlaceOverlay()
         self.place = "fixed"
+        # True when the text reader takes its picture from the game window itself (like OBS): our windows are not in
+        # that picture, so they can cover the English and still show in recordings
+        self.ocr_blind = False
 
     def configure(self, style: dict, qscreen) -> None:
         self.style = dict(style)
@@ -424,10 +494,13 @@ class OverlayLayers(QObject):
                 if w.isVisible():
                     w.clear(animate=False)
             self._last = {}
-            if self.place == "cover" and self.inplace.isVisible() and not self.inplace.excluded:
-                # this Windows cannot hide our window from the capture: covering the text would hide it from the
-                # reader too, so the translation goes just above it instead
-                self.inplace.configure(self.style, "above")
+            mode = self.place
+            if mode == "cover" and not self.reader_cant_see_us():
+                # the text reader would see our window: covering the English would hide it from the reader too,
+                # so the translation goes just above it instead
+                mode = "above"
+            if mode != self.inplace.mode:
+                self.inplace.configure(self.style, mode)
             self.inplace.show_items(items)
             return
         if self.inplace.isVisible():
@@ -442,6 +515,14 @@ class OverlayLayers(QObject):
             elif w.isVisible():
                 w.clear()
         self._last = parts
+
+    def reader_cant_see_us(self) -> bool:
+        """The screen picture the text is read from does not contain our subtitle windows."""
+        if self.ocr_blind:
+            return True
+        if self.style.get("recordable", True):
+            return False
+        return self.inplace.excluded if self.inplace.isVisible() else True
 
     def clear(self, animate: bool = True):
         for w in self.layers.values():
@@ -463,6 +544,8 @@ class OverlayLayers(QObject):
         return all(w.excluded for w in ws)
 
     def physical_rects(self) -> list[tuple[int, int, int, int]]:
+        if self.ocr_blind:
+            return []
         out = [r for w in self.layers.values() if not w.excluded for r in [w.physical_rect()] if r]
         if not self.inplace.excluded:
             out += self.inplace.physical_rects()

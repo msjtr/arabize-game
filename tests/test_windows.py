@@ -30,10 +30,13 @@ def test_overlay_excluded_from_capture():
     from arabize.overlay import SubtitleOverlay
     app = QApplication.instance() or QApplication([])
     ov = SubtitleOverlay()
-    ov.configure({"font_size": 26}, app.primaryScreen())
+    ov.configure({"font_size": 26, "recordable": False}, app.primaryScreen())
     ov.show_items([{"label": "", "tr": "اختبار", "src": ""}])
     app.processEvents()
     assert ov.excluded  # SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) succeeded
+    ov.configure({"font_size": 26, "recordable": True}, app.primaryScreen())
+    app.processEvents()
+    assert not ov.excluded  # visible to screenshots and recordings again
     ov.close()
 
 
@@ -72,7 +75,7 @@ def test_dxgi_capture_reads_the_screen_and_skips_our_overlay():
     from arabize.textproc import similarity
     app = QApplication.instance() or QApplication([])
     lab, exp = _show_scene(app)
-    ov = SubtitleOverlay(); ov.configure({"font_size": 40, "anchor": "top", "offset": 20, "width_pct": 60}, app.primaryScreen())
+    ov = SubtitleOverlay(); ov.configure({"font_size": 40, "anchor": "top", "offset": 20, "width_pct": 60, "recordable": False}, app.primaryScreen())
     ov.show_items([{"label": "", "tr": "OVERLAYMARKER", "src": ""}]); app.processEvents()
     cap = Capturer("dxgi")
     img, box = cap.grab(1)
@@ -150,7 +153,7 @@ def test_in_place_cover_is_hidden_from_the_reader():
     cap = Capturer("auto")
     img, box = cap.grab(1)
     text0 = _read(img)
-    ov = InPlaceOverlay(); ov.configure({"font_size": 26, "bg": "#000000", "box": "card", "rtl": False}, "cover")
+    ov = InPlaceOverlay(); ov.configure({"font_size": 26, "bg": "#000000", "box": "card", "rtl": False, "recordable": False}, "cover")
     # cover the whole screen's middle with an opaque plate that says OVERLAYMARKER
     ov.show_items([{"label": "", "src": "x", "tr": "OVERLAYMARKER OVERLAYMARKER", "abs": (200, 200, 1400, 600), "line_h": 60}])
     for _ in range(10):

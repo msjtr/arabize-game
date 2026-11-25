@@ -7,13 +7,14 @@ from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QComboBox, QHBoxLayout, 
 
 from ..config import APP_NAME_AR, APP_NAME_EN, APP_VERSION
 from . import icons, theme
-from .pages import EnginesPage, GamesPage, HelpPage, HistoryPage, HomePage, HotkeysPage, LookPage, ScreensPage
+from .pages import DevicePage, EnginesPage, GamesPage, HelpPage, HistoryPage, HomePage, HotkeysPage, LookPage, ScreensPage
 from .widgets import Toast
 
 NAV = [("power", "التشغيل", HomePage, "gold"), ("monitor", "الشاشة والمنطقة", ScreensPage, "blue"),
        ("palette", "المظهر والقوالب", LookPage, "rose"), ("lang", "المحركات واللغة", EnginesPage, "cyan"),
        ("games", "الألعاب", GamesPage, "violet"), ("hist", "السجل", HistoryPage, "emerald"),
-       ("keyboard", "الاختصارات", HotkeysPage, "slate"), ("help", "المساعدة", HelpPage, "coral")]
+       ("keyboard", "الاختصارات", HotkeysPage, "slate"), ("cpu", "الجهاز والأداء", DevicePage, "cyan"),
+       ("help", "المساعدة", HelpPage, "coral")]
 
 
 class MainWindow(QMainWindow):
@@ -81,7 +82,7 @@ class MainWindow(QMainWindow):
         self.pages[i].refresh()
 
     def go_name(self, name: str):
-        idx = {"screens": 1, "look": 2, "engines": 3, "games": 4, "history": 5, "hotkeys": 6, "help": 7, "home": 0}.get(name, 0)
+        idx = {"screens": 1, "look": 2, "engines": 3, "games": 4, "history": 5, "hotkeys": 6, "device": 7, "help": 8, "home": 0}.get(name, 0)
         self.go(idx)
 
     def _set_adv(self, on: bool):

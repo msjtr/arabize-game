@@ -9,6 +9,10 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 for pkg in ("rapidocr_onnxruntime", "openvr") + (("windows_capture",) if sys.platform == "win32" else ()):
     d, b, h = collect_all(pkg)
     datas += d; binaries += b; hidden += h
+# PresentMon (Intel, MIT) for the FPS readout, when the build fetched it (see the CI workflow / build_windows.bat)
+import os
+if os.path.isfile("vendor/PresentMon.exe"):
+    binaries.append(("vendor/PresentMon.exe", "presentmon"))
 # onnxruntime: only the runtime itself, not its model-conversion tools (which drag in scipy/pandas/sympy)
 binaries += collect_dynamic_libs("onnxruntime")
 hidden += collect_submodules("onnxruntime.capi")

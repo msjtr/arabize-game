@@ -13,10 +13,12 @@ from .capture import Capturer
 from .config import APP_NAME_AR, Settings
 from .engines import Manager
 from .hotkeys import Hotkeys
+from .hud import PerfHud
+from .hwinfo import FpsMeter, Sensors
 from . import styles
 from .overlay import OverlayLayers
 from .pipeline import LiveTranslator
-from .platform_utils import IS_WIN, foreground_exe
+from .platform_utils import IS_WIN, foreground_exe, restart_as_admin
 from .screens import RegionSelector, qscreen_for
 from .ui import icons, theme
 from .logs import log
@@ -64,7 +66,13 @@ class Controller(QObject):
         self.hotkeys.failed.connect(lambda m: self.toast(m, err=True))
         self._game = None
         self.game_timer = QTimer(self); self.game_timer.timeout.connect(self._watch_game); self.game_timer.start(2000)
+        # performance readout: live readings and the game's frame rate, only while someone looks at them
+        self.sensors = Sensors()
+        self.fps = FpsMeter()
+        self.hud = PerfHud(self._hud_source)
         self.apply_display()
+        if self.settings.get("hud.on"):
+            QTimer.singleShot(1500, lambda: self.set_hud(True, quiet=True))
 
     # ------------------------------------------------------------------ helpers
     @property
@@ -130,10 +138,12 @@ class Controller(QObject):
             self.worker.trigger()
 
     def _on_status(self, code, msg):
-        if code == "error" and "OCR" in msg:
+        if code == "error":
             self.toast(msg, err=True)
 
     def _on_result(self, r: dict):
+        # the reader takes its picture from the game window itself: our windows are not in it
+        self.overlay.ocr_blind = r.get("capture") == "window"
         self.last_items = r["items"]
         self._show(self.last_items)
         self.result.emit(r)
@@ -221,6 +231,66 @@ class Controller(QObject):
             return
         self.vr.show_items([{"kind": "other", "label": "", "tr": msg, "src": ""}])
         QTimer.singleShot(1200, lambda: self.vr.active and self.vr.show_items(self.last_items or [{"kind": "other", "label": "", "tr": "·", "src": ""}]))
+
+    # ------------------------------------------------------------------ translation size (shortcut, works in game)
+    SIZE_LIMITS = {"screen": (12, 80), "vr": (20, 90)}
+
+    def adjust_size(self, step: int) -> int:
+        """Make the translation bigger (+) or smaller (-) from inside the game. Saved for this game."""
+        mode = "vr" if self.prof["display"]["mode"] == "vr" else "screen"
+        lo, hi = self.SIZE_LIMITS[mode]
+        cur = int(self.prof["display"][mode].get("font_size", 26))
+        val = max(lo, min(hi, cur + step * (4 if mode == "vr" else 2)))
+        self.settings.update_profile(f"display.{mode}.font_size", val)
+        self.apply_display()
+        if mode == "screen" and self.last_items and not self.overlay_hidden:
+            self.overlay.show_items(self.last_items)
+        self.profile_changed.emit()
+        msg = f"حجم الترجمة: {val}"
+        if mode == "vr":
+            self.vr_feedback(msg)
+        else:
+            self.toast(msg)
+        return val
+
+    # ------------------------------------------------------------------ performance readout (FPS, temperatures, ping)
+    def _hud_source(self):
+        ping = self.manager.ping()
+        return (self.settings.get("hud", {}) or {}, self.sensors.data, self.fps.current(), self.fps.state, ping)
+
+    def _device_page_open(self) -> bool:
+        w = self.window
+        return bool(w and w.isVisible() and type(w.stack.currentWidget()).__name__ == "DevicePage")
+
+    def set_hud(self, on: bool, quiet: bool = False):
+        self.settings.set("hud.on", bool(on))
+        if bool(on) == self.hud.isVisible():
+            return
+        if on:
+            self.sensors.start()
+            if (self.settings.get("hud", {}) or {}).get("fps", True):
+                self.fps.start()
+            self.hud.recordable = bool(self.prof["display"]["screen"].get("recordable", True))
+            self.hud.start()
+            if not quiet:
+                self.toast("ظهر مؤشر الأداء — اضغط الاختصار نفسه لإخفائه")
+        else:
+            self.hud.stop()
+            if not self._device_page_open():
+                self.fps.stop()
+            self.sensors.stop()
+            if not quiet:
+                self.toast("أُخفي مؤشر الأداء")
+
+    def toggle_hud(self):
+        self.set_hud(not self.hud.isVisible())
+
+    def restart_admin(self):
+        """FPS needs administrator rights: start again elevated (Windows asks), then close this copy."""
+        if restart_as_admin():
+            self.quit()
+        else:
+            self.toast("لم يُعِد ويندوز التشغيل كمسؤول — اضغط بزر الماوس الأيمن على البرنامج واختر «تشغيل كمسؤول»", err=True)
 
     def toggle_overlay(self):
         self.overlay_hidden = not self.overlay_hidden
@@ -505,7 +575,8 @@ class Controller(QObject):
     def _hotkey(self, action: str):
         {"toggle": self.toggle, "region": self.select_region, "hide": self.toggle_overlay,
          "mode": lambda: self.set_mode("screen" if self.prof["display"]["mode"] == "vr" else "vr"),
-         "retranslate": self.retranslate}.get(action, lambda: self.vr_adjust(action))()
+         "retranslate": self.retranslate, "size_up": lambda: self.adjust_size(+1),
+         "size_down": lambda: self.adjust_size(-1), "hud": self.toggle_hud}.get(action, lambda: self.vr_adjust(action))()
 
     def setup_tray(self):
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -553,5 +624,6 @@ class Controller(QObject):
         self.stop()
         (self.vr.stop(), self._vr_timer_sync())
         self.hotkeys.stop()
+        self.hud.stop(); self.fps.stop(); self.sensors.stop(force=True)
         self.store.close()
         QApplication.quit()

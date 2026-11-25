@@ -18,6 +18,46 @@ def exclude_from_capture(win_id: int) -> bool:
         return False
 
 
+def set_capture_visible(win_id: int, visible: bool) -> bool:
+    """visible=True: screenshots and recordings show the window (normal). False: hidden from every capture.
+    Returns True when the window is now hidden from capture."""
+    if not IS_WIN:
+        return False
+    if not visible:
+        return exclude_from_capture(win_id)
+    try:
+        ctypes.windll.user32.SetWindowDisplayAffinity(ctypes.c_void_p(int(win_id)), 0)   # WDA_NONE
+    except Exception:
+        pass
+    return False
+
+
+def is_admin() -> bool:
+    if not IS_WIN:
+        try:
+            import os
+            return os.geteuid() == 0
+        except Exception:
+            return False
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def restart_as_admin() -> bool:
+    """Start this program again with administrator rights (Windows asks the user). True if the request was made."""
+    if not IS_WIN:
+        return False
+    try:
+        import subprocess
+        exe = sys.executable
+        args = "" if getattr(sys, "frozen", False) else subprocess.list2cmdline(sys.argv)
+        return int(ctypes.windll.shell32.ShellExecuteW(None, "runas", exe, args, None, 1)) > 32
+    except Exception:
+        return False
+
+
 def foreground_exe() -> str | None:
     """Executable name of the window in front (the game), e.g. 'eldenring.exe'."""
     if not IS_WIN:

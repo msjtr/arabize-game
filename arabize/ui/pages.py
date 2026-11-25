@@ -110,6 +110,7 @@ class HomePage(Page):
         stats = QHBoxLayout(); stats.setSpacing(12)
         self.stat = {}
         for key, ic, label in (("engine", "lang", "محرك الترجمة"), ("speed", "zap", "زمن القراءة + الترجمة"),
+                               ("ping", "wifi" if "wifi" in icons.icons3d.GLYPHS else "zap", "البنق إلى خدمة الترجمة"),
                                ("usage", "cpu", "استهلاك البرنامج"), ("count", "hist", "ترجمات هذه الجلسة")):
             c, l = card()
             l.addWidget(title(label, ic))
@@ -161,9 +162,12 @@ class HomePage(Page):
 
     def on_status(self, code, msg):
         names = {"running": "الترجمة تعمل", "reading": "يقرأ النص…", "translating": "يترجم…", "paused": "متوقف مؤقتاً",
-                 "offline": "بانتظار الإنترنت", "error": "تنبيه", "stopped": "جاهز للتشغيل"}
+                 "offline": "الترجمة تعمل — الاتصال متقطع", "warn": "الترجمة تعمل — ملاحظة", "error": "يحتاج انتباهك",
+                 "stopped": "جاهز للتشغيل"}
         self.state_lbl.setText(names.get(code, msg))
-        self.state_lbl.setStyleSheet(f"color:{theme.ERR if code in ('error', 'offline') else theme.MIST};")
+        # a slow or busy translation service is not a fault of the PC: calm amber, red only when the user must act
+        color = theme.ERR if code == "error" else (theme.WARN if code in ("offline", "warn") else theme.MIST)
+        self.state_lbl.setStyleSheet(f"color:{color};")
         self.state_sub.setText(msg if code != "stopped" else "افتح لعبتك ثم اضغط «ابدأ الترجمة» أو Ctrl+Shift+T من داخل اللعبة.")
 
     def on_result(self, r):
@@ -179,6 +183,11 @@ class HomePage(Page):
 
     def on_metrics(self, m):
         self.stat["usage"].setText(f"{m['cpu']:.0f}% • {m['mem']:.0f} MB")
+        ping = m.get("ping") or {}
+        if ping:
+            eid, ms = min(ping.items(), key=lambda kv: kv[1])
+            self.stat["ping"].setText(f"{ms} ms")
+            self.stat["ping"].setToolTip(" • ".join(f"{ENGINE_INFO.get(k, {}).get('name', k).split(' (')[0]}: {v} ms" for k, v in ping.items()))
 
     def _edit_last(self):
         if not self._last:
@@ -355,6 +364,15 @@ class LookPage(Page):
         self.place = Chips([(k, n) for k, n, _ in PLACES]); self.place.changed.connect(self._place)
         self.place_hint = hint("")
         lp.addWidget(self.place); lp.addWidget(self.place_hint)
+        self.blend = QCheckBox(); self.blend.toggled.connect(lambda b: self._s("blend", b))
+        lp.addWidget(row("دمج الترجمة مع واجهة اللعبة", self.blend,
+                         "مع «فوق النص الأصلي»: تأخذ الترجمة لون خلفية اللعبة ولون نصها وحجمه، فيختفي الإنجليزي وتبدو اللعبة معرّبة رسمياً"))
+        self.steady = QCheckBox(); self.steady.toggled.connect(lambda b: self._s("steady", b))
+        lp.addWidget(row("ثبات مكان الترجمة وحجم صندوقها", self.steady,
+                         "يبقى صندوق الترجمة بحجم واحد في مكانه، ولا تهتز الترجمة فوق النص مع كل قراءة"))
+        self.recordable = QCheckBox(); self.recordable.toggled.connect(self._recordable)
+        lp.addWidget(row("تظهر الترجمة في لقطات الشاشة والتسجيل", self.recordable,
+                         "تظهر في Xbox Game Bar وأداة القص وOBS (التقاط الشاشة) وDiscord. يقرأ البرنامج حينها نافذة اللعبة نفسها مثل OBS"))
         sv.addWidget(cp)
 
         # ---- templates
@@ -378,7 +396,7 @@ class LookPage(Page):
         lf.addWidget(self.fontpick)
         self.size = ValueSlider(14, 80, 1, " px", 26); self.size.valueChanged.connect(lambda v: self._s("font_size", int(v)))
         self.bold = QCheckBox(); self.bold.toggled.connect(lambda b: self._s("bold", b))
-        lf.addWidget(row("حجم الخط", self.size, "للتلفزيون البعيد اختر 36 فأكثر")); lf.addWidget(row("خط عريض", self.bold))
+        lf.addWidget(row("حجم الخط", self.size, "للتلفزيون البعيد اختر 36 فأكثر. ومن داخل اللعبة: Ctrl+Shift+U للتكبير وCtrl+Shift+J للتصغير")); lf.addWidget(row("خط عريض", self.bold))
         sv.addWidget(cf)
 
         # ---- colours & box
@@ -513,6 +531,11 @@ class LookPage(Page):
         self.place_hint.setText({a: c for a, _, c in PLACES}.get(k, ""))
         self._s("place", k)
 
+    def _recordable(self, on: bool):
+        self._s("recordable", on)
+        self.ctrl.hud.recordable = on
+        self.ctrl.restart_if_running()
+
     def _s(self, key, val, play: bool = False):
         self.ctrl.settings.update_profile(f"display.screen.{key}", val)
         if key in styles.LOOK_KEYS and self.prof["display"]["screen"].get("template") != "custom":
@@ -586,7 +609,7 @@ class LookPage(Page):
 
     def refresh(self):
         s, v = self.prof["display"]["screen"], self.prof["display"]["vr"]
-        widgets = [self.anchor, self.bold, self.orig, self.vorig, self.layers_on] + [w[k] for w in self.layer_w.values() for k in ("on", "anchor")]
+        widgets = [self.anchor, self.bold, self.orig, self.vorig, self.layers_on, self.blend, self.steady, self.recordable] + [w[k] for w in self.layer_w.values() for k in ("on", "anchor")]
         for w in widgets:
             w.blockSignals(True)
         self.gallery.set_templates(self.ctrl.templates(), s.get("template", "custom"))
@@ -597,6 +620,8 @@ class LookPage(Page):
         self.radius.setValue(s.get("radius", 16)); self.align.set(s.get("align", "center"))
         from ..overlay import PLACES
         self.place.set(s.get("place", "cover")); self.place_hint.setText({a: c for a, _, c in PLACES}.get(s.get("place", "cover"), ""))
+        self.blend.setChecked(s.get("blend", True)); self.steady.setChecked(s.get("steady", True))
+        self.recordable.setChecked(s.get("recordable", True))
         self.fx_in.set(s.get("fx_in", "fade")); self.fx_out.set(s.get("fx_out", "fade")); self.fx_ms.setValue(s.get("fx_ms", 260))
         self.anchor.setCurrentIndex(max(0, self.anchor.findData(s["anchor"])))
         self.offset.setValue(s["offset"]); self.width.setValue(s["width_pct"]); self.orig.setChecked(s["show_original"])
@@ -748,7 +773,8 @@ class EnginesPage(Page):
             if r["ok"]:
                 out.append(f"<p><b style='color:{theme.OK}'>✓ {name}</b> — {r['ms']} ms<br><span>{r['text']}</span></p>")
             else:
-                out.append(f"<p><b style='color:{theme.ERR}'>✗ {name}</b> — {r['error']}</p>")
+                from ..messages import engine_test_error
+                out.append(f"<p><b style='color:{theme.WARN}'>✗ {name}</b> — {engine_test_error(r['error'])}</p>")
         self.test_out.setText("".join(out))
 
 
@@ -1006,6 +1032,7 @@ class HotkeysPage(Page):
     title_text = "الاختصارات"
     NAMES = {"toggle": "تشغيل / إيقاف الترجمة", "region": "تحديد منطقة الترجمة", "hide": "إخفاء / إظهار الترجمة",
              "mode": "التبديل بين الشاشة والواقع الافتراضي", "retranslate": "ترجم الشاشة الآن",
+             "size_up": "تكبير الترجمة", "size_down": "تصغير الترجمة", "hud": "إظهار / إخفاء مؤشر الأداء (FPS والحرارة)",
              "vr_left": "VR: تحريك اللوحة لليسار", "vr_right": "VR: تحريك اللوحة لليمين", "vr_up": "VR: رفع اللوحة",
              "vr_down": "VR: خفض اللوحة", "vr_nearer": "VR: تقريب اللوحة", "vr_farther": "VR: إبعاد اللوحة",
              "vr_bigger": "VR: تكبير اللوحة", "vr_smaller": "VR: تصغير اللوحة", "vr_center": "VR: إعادة اللوحة أمامك",
@@ -1045,6 +1072,146 @@ class HotkeysPage(Page):
         self.ctrl.settings.set("hotkeys", dict(DEFAULT_HOTKEYS)); self.refresh(); self._save()
 
 
+# ======================================================================= device & performance
+class DevicePage(Page):
+    title_text = "الجهاز والأداء"
+
+    def __init__(self, ctrl):
+        super().__init__(ctrl)
+        c, l = card(gold=True); l.addWidget(title("مواصفات جهازك", "cpu"))
+        self.spec_lbl = QLabel("…"); self.spec_lbl.setTextFormat(Qt.RichText); self.spec_lbl.setWordWrap(True)
+        self.spec_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        l.addWidget(self.spec_lbl)
+        cb = QPushButton(icons.icon("download", theme.GOLD2), "  نسخ المواصفات"); cb.clicked.connect(self._copy)
+        l.addWidget(cb, 0, Qt.AlignRight)
+        self.v.addWidget(c)
+
+        c2, l2 = card(); l2.addWidget(title("القراءات الآن", "zap"))
+        g = QGridLayout(); g.setHorizontalSpacing(18); g.setVerticalSpacing(10)
+        self.live = {}
+        for i, (k, name) in enumerate((("fps", "الإطارات في الثانية (FPS)"), ("cpu_temp", "حرارة المعالج"),
+                                       ("cpu", "استخدام المعالج"), ("gpu_temp", "حرارة كرت الشاشة"),
+                                       ("ram", "الذاكرة المستخدمة"), ("ping", "البنق إلى خدمة الترجمة"))):
+            box = QFrame(); box.setObjectName("LayerBox"); bl = QVBoxLayout(box); bl.setContentsMargins(12, 8, 12, 8)
+            bl.addWidget(QLabel(name))
+            v = QLabel("—"); v.setObjectName("Stat"); bl.addWidget(v)
+            n = hint(""); bl.addWidget(n)
+            self.live[k] = (v, n)
+            g.addWidget(box, i // 3, i % 3)
+        l2.addLayout(g)
+        self.admin_btn = QPushButton(icons.icon("power", theme.GOLD2), "  إعادة التشغيل كمسؤول لقراءة FPS")
+        self.admin_btn.clicked.connect(ctrl.restart_admin); self.admin_btn.hide()
+        l2.addWidget(self.admin_btn, 0, Qt.AlignRight)
+        l2.addWidget(hint("FPS يُقرأ بأداة PresentMon من Intel (نفسها التي تستخدمها برامج قياس الأداء)، وويندوز يسمح بها للمسؤول فقط. "
+                          "حرارة المعالج: يقرأها البرنامج من LibreHardwareMonitor إن كان يعمل (الأدق)، وإلا من حساس ويندوز التقريبي."))
+        self.v.addWidget(c2)
+
+        c3, l3 = card(); l3.addWidget(title("مؤشر الأداء فوق اللعبة", "monitor"))
+        l3.addWidget(hint("نافذة صغيرة في زاوية الشاشة تعرض FPS والحرارة والذاكرة والبنق أثناء اللعب، ولا تستقبل الماوس. "
+                          "اختصارها من داخل اللعبة: Ctrl+Shift+F."))
+        self.hud_on = QCheckBox(); self.hud_on.toggled.connect(lambda b: ctrl.set_hud(b))
+        l3.addWidget(row("إظهار المؤشر", self.hud_on))
+        from ..hud import CORNERS
+        self.corner = QComboBox()
+        for k, t in CORNERS:
+            self.corner.addItem(t, k)
+        self.corner.currentIndexChanged.connect(lambda _: self._hud("corner", self.corner.currentData()))
+        l3.addWidget(row("مكانه", self.corner))
+        self.hud_items = {}
+        hr = QHBoxLayout(); hr.setSpacing(14)
+        for k, t in (("fps", "FPS"), ("cpu_temp", "حرارة المعالج"), ("cpu", "استخدام المعالج"), ("gpu_temp", "كرت الشاشة"),
+                     ("ram", "الذاكرة"), ("ping", "البنق")):
+            cbx = QCheckBox(t); cbx.toggled.connect(lambda b, k=k: self._hud(k, b)); hr.addWidget(cbx); self.hud_items[k] = cbx
+        hr.addStretch(1); l3.addLayout(hr)
+        self.hud_scale = ValueSlider(70, 200, 10, "%", 100); self.hud_scale.valueChanged.connect(lambda v: self._hud("scale", int(v)))
+        l3.addWidget(row("الحجم", self.hud_scale))
+        self.v.addWidget(c3); self.v.addStretch(1)
+        self._specs = None
+        self._timer = QTimer(self, interval=1000, timeout=self._tick)
+
+    def _hud(self, key, val):
+        self.ctrl.settings.set(f"hud.{key}", val)
+        if key == "fps" and val and self.ctrl.hud.isVisible():
+            self.ctrl.fps.start()
+        if self.ctrl.hud.isVisible():
+            self.ctrl.hud.refresh()
+
+    def refresh(self):
+        from .. import hwinfo
+        if self._specs is None:
+            try:
+                self._specs = hwinfo.specs()
+            except Exception:
+                self._specs = {"os": "", "cpu": "", "cores": 0, "threads": 0, "cpu_mhz": None, "gpus": [], "ram_gb": None, "drives": []}
+        s = self._specs
+        def L(x) -> str:                           # keep English names and numbers in one left-to-right piece
+            return "⁦" + str(x) + "⁩"
+
+        def gb(v) -> str:
+            return L(f"{v:g} GB")
+
+        gl = "<br>".join(L(g["name"]) + (" — الذاكرة " + gb(g["vram_gb"]) if g.get("vram_gb") else "")
+                         for g in s["gpus"]) or "غير معروف"
+        dl = "<br>".join(L(d["mount"]) + ": السعة " + gb(d["total_gb"]) + "، المتاح " + gb(d["free_gb"])
+                         for d in s["drives"]) or "غير معروف"
+        speed = (" • السرعة: " + L(f"{s['cpu_mhz'] / 1000:.2f} GHz")) if s.get("cpu_mhz") else ""
+        cpu = (L(s["cpu"]) + f"<br><span style='color:{theme.MUTED}'>الأنوية: {s['cores']} • المسارات: {s['threads']}"
+               + speed + "</span>")
+        rows = [("النظام", L(s["os"])), ("المعالج (CPU)", cpu), ("كرت الشاشة (GPU)", gl),
+                ("الذاكرة العشوائية (RAM)", gb(s["ram_gb"]) if s.get("ram_gb") else "غير معروف"), ("التخزين", dl)]
+        self.spec_lbl.setText("<table cellspacing=8>" + "".join(
+            f"<tr><td style='color:{theme.GOLD2}'><b>{a}</b></td><td>\u200f{b.replace('<br>', '<br>\u200f')}</td></tr>" for a, b in rows) + "</table>")
+        h = self.ctrl.settings.get("hud", {}) or {}
+        for w in [self.hud_on, self.corner, self.hud_scale] + list(self.hud_items.values()):
+            w.blockSignals(True)
+        self.hud_on.setChecked(self.ctrl.hud.isVisible())
+        self.corner.setCurrentIndex(max(0, self.corner.findData(h.get("corner", "top-left"))))
+        for k, cbx in self.hud_items.items():
+            cbx.setChecked(bool(h.get(k, True)))
+        self.hud_scale.setValue(h.get("scale", 100))
+        for w in [self.hud_on, self.corner, self.hud_scale] + list(self.hud_items.values()):
+            w.blockSignals(False)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self.ctrl.sensors.start(); self.ctrl.fps.start()
+        self._timer.start(); self._tick()
+
+    def hideEvent(self, e):
+        super().hideEvent(e)
+        self._timer.stop()
+        self.ctrl.sensors.stop()
+        if not self.ctrl.hud.isVisible():
+            self.ctrl.fps.stop()
+
+    def _tick(self):
+        from ..hwinfo import FPS_STATES, TEMP_SOURCES
+        d, fps = self.ctrl.sensors.data, self.ctrl.fps
+        f = fps.current()
+        self.live["fps"][0].setText(f"{f:.0f}" if f is not None else "—")
+        self.live["fps"][1].setText(f"اللعبة: {fps.exe}" if (fps.state == "running" and fps.exe) else FPS_STATES.get(fps.state, ""))
+        self.admin_btn.setVisible(fps.state == "need_admin")
+        t = d.get("cpu_temp")
+        self.live["cpu_temp"][0].setText(f"{t:.0f}°C" if t is not None else "—")
+        self.live["cpu_temp"][1].setText(TEMP_SOURCES.get(d.get("cpu_temp_src"), d.get("cpu_temp_src") or "") if t is not None
+                                         else self.ctrl.sensors.temp_note or "جارٍ القراءة…")
+        self.live["cpu"][0].setText(f"{d['cpu']:.0f}%" if d.get("cpu") is not None else "—")
+        g = d.get("gpu_temp")
+        self.live["gpu_temp"][0].setText(f"{g:.0f}°C" if g is not None else "—")
+        self.live["gpu_temp"][1].setText(f"الحمل {d['gpu_load']:.0f}%" if d.get("gpu_load") is not None else
+                                         ("" if g is not None else "متاح مع NVIDIA أو LibreHardwareMonitor"))
+        self.live["ram"][0].setText(f"{d['ram_used_gb']:.1f} / {d['ram_total_gb']:.0f} GB" if d.get("ram_used_gb") is not None else "—")
+        self.live["ram"][1].setText(f"{d['ram_pct']:.0f}%" if d.get("ram_pct") is not None else "")
+        ping = self.ctrl.manager.ping()
+        self.live["ping"][0].setText(f"{min(ping.values())} ms" if ping else "—")
+        self.live["ping"][1].setText("" if ping else "يظهر بعد أول ترجمة")
+
+    def _copy(self):
+        from .. import hwinfo
+        QGuiApplication.clipboard().setText(hwinfo.specs_text(self._specs or hwinfo.specs()))
+        self.ctrl.toast("نُسخت مواصفات جهازك")
+
+
 # ======================================================================= help
 class HelpPage(Page):
     title_text = "المساعدة"
@@ -1054,7 +1221,12 @@ class HelpPage(Page):
         ("الصورة سوداء أو لا يقرأ شيئاً", "من صفحة «الشاشة والمنطقة» جرّب طريقة التقاط أخرى: «نافذة اللعبة فقط» تلتقط اللعبة نفسها مثل OBS، و«DXGI» تعمل مع ملء الشاشة."),
         ("لا يقرأ النص أو يقرأه خطأ", "حدّد منطقة الحوار فقط بدل الشاشة كاملة، واجعل حجم الترجمة في اللعبة أكبر إن أمكن. جرّب محرك القراءة الآخر من صفحة المحركات (الوضع المتقدم)."),
         ("الترجمة بطيئة", "حدّد منطقة صغيرة، وقلّل «انتظار ثبات النص»، وفعّل محرك ترجمة واحد سريع. النصوص المتكررة تُترجم فوراً من الذاكرة."),
-        ("يظهر «بانتظار الإنترنت»", "انقطع الاتصال أو تعطل المحرك. البرنامج يعيد المحاولة تلقائياً وينتقل للمحرك التالي. استخدم «اختبر المحركات» لمعرفة السبب."),
+        ("تظهر ملاحظة عن خدمة الترجمة", "خدمات الترجمة مواقع على الإنترنت؛ إن تأخرت إحداها أو انشغلت ينتقل البرنامج للخدمة التالية ويعيد المحاولة وحده. "
+         "جهازك سليم ولا يلزمك فعل شيء. الجمل المترجمة سابقاً تظهر فوراً من الذاكرة حتى دون إنترنت. وزمن الاتصال (البنق) ظاهر في صفحة التشغيل."),
+        ("الترجمة لا تظهر في تصوير الشاشة أو التسجيل", "فعّل «تظهر الترجمة في لقطات الشاشة والتسجيل» من صفحة المظهر (مفعّل افتراضياً). "
+         "في OBS استخدم «التقاط الشاشة» (Display Capture)؛ «التقاط اللعبة» (Game Capture) يأخذ اللعبة وحدها دون أي نافذة فوقها."),
+        ("FPS لا يظهر", "قراءة الإطارات تحتاج صلاحية المسؤول في ويندوز: من صفحة «الجهاز والأداء» اضغط «إعادة التشغيل كمسؤول»."),
+        ("حرارة المعالج لا تظهر", "ويندوز لا يعطي حرارة المعالج لكل الأجهزة. شغّل برنامج LibreHardwareMonitor المجاني بجانب عرب لعبتك، وسيقرأ منه الحرارة الدقيقة تلقائياً."),
         ("الاختصارات لا تعمل داخل اللعبة", "إن كانت اللعبة تعمل كمسؤول، شغّل البرنامج كمسؤول أيضاً. وتأكد أن الاختصار غير مستخدم في اللعبة نفسها."),
         ("التلفزيون لا يظهر", "وصّل التلفزيون بالكمبيوتر كشاشة عرض (HDMI)، وفعّله من إعدادات العرض في ويندوز، ثم افتح صفحة «الشاشة والمنطقة»."),
         ("وضع VR لا يعمل", "شغّل SteamVR والنظارة متصلة أولاً، ثم اضغط «اختبر اللوحة في النظارة». نظارات Quest تعمل عبر Link أو Air Link أو Virtual Desktop."),
