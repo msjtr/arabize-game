@@ -339,3 +339,33 @@ def test_presentmon_is_bundled_and_starts(qapp):
         assert m.state in ("waiting", "running"), m.state
     finally:
         m.stop()
+
+
+def test_typed_out_line_held_back_is_still_translated_when_the_screen_goes_still(env, qapp):
+    """Regression: the last read of a typewriter line can be held back (still growing); if the screen then stays still
+    there is no further read, and the end of the line used to be lost."""
+    from arabize.pipeline import LiveTranslator
+    from arabize.textproc import Line
+    s, st, m = env
+    lt = LiveTranslator(s, st, m)
+    img = np.zeros((400, 1200, 3), np.uint8)
+    box = {"left": 0, "top": 0, "width": 1200, "height": 400}
+    prof = s.profile
+
+    def read(text):
+        lt._ocr_read = lambda _img, _prof: [Line(text, 0.99, 100, 300, 18 * len(text), 30)]
+        lt._read(img, box, prof, time.monotonic())
+
+    read("Captain, the storm")
+    read("Captain, the storm will reach the harbour")      # still growing: held back
+    full = "Captain, the storm will reach the harbour before sunset."
+    read(full)                                             # last frame, then the screen stays still
+    t0 = time.time()
+    while time.time() - t0 < 5:
+        lt._flush_growing(prof)
+        if any(it["src"] == full for it in lt.visible_items()):
+            break
+        time.sleep(0.05)
+    shown = [it for it in lt.visible_items() if it["src"] == full]
+    assert shown and shown[0]["tr"].endswith("sunset.")
+    lt._pool.shutdown(wait=False)

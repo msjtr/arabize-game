@@ -71,6 +71,7 @@ class LiveTranslator(QThread):
         self._read_t = 0.0                        # time of the latest OCR read
         self._prev_keys: list[str] = []
         self._grow_sent: dict[str, float] = {}
+        self._grow_due: dict[str, float] = {}     # typed-out lines held back a moment: when to translate them anyway
         self._shown_sig: tuple = ()
         self._last_hist = None
         self._offline = False
@@ -170,6 +171,7 @@ class LiveTranslator(QThread):
                 if fire:
                     self._read(img, box, prof, now)
                 self._retry_failed(prof)
+                self._flush_growing(prof)
                 self._publish()
             except Exception as e:  # never let one bad frame kill the loop
                 log.exception("capture/read loop error")
@@ -246,7 +248,10 @@ class LiveTranslator(QThread):
                 if k in self._tr or k in self._inflight or self._fail_until.get(k, 0) > now:
                     continue
                 if self._growing(k) and now - self._grow_sent.get(self._root(k), 0) < self.GROW_WAIT_S:
-                    continue                       # still being typed out: wait for the rest (or GROW_WAIT_S)
+                    # still being typed out: wait for the rest, but translate it anyway once GROW_WAIT_S is up, even
+                    # if the screen goes still and is not read again (the last words of a line must never be lost)
+                    self._grow_due[k] = self._grow_sent.get(self._root(k), 0) + self.GROW_WAIT_S
+                    continue
                 if self._growing(k):
                     self._grow_sent[self._root(k)] = now
                 todo.append(it)
@@ -338,6 +343,24 @@ class LiveTranslator(QThread):
             log.exception("history write failed")
         self._publish(engine, source)
         self.status.emit("running", messages.RECOVERED if was_offline else "يعمل — بانتظار نص جديد")
+
+    def _flush_growing(self, prof):
+        """A typed-out line that was held back and is still on screen is translated once its wait is over."""
+        if not self._grow_due:
+            return
+        now = time.monotonic()
+        with self._lock:
+            due = []
+            for k, t in list(self._grow_due.items()):
+                s = self._seen.get(k)
+                if k in self._tr or k in self._inflight or s is None or s["last"] < self._read_t - 1e-6:
+                    del self._grow_due[k]            # done, or no longer on screen
+                elif now >= t:
+                    del self._grow_due[k]
+                    self._grow_sent[self._root(k)] = now
+                    due.append(s["item"])
+        if due:
+            self._submit(due, prof)
 
     def _retry_failed(self, prof):
         """Lines whose translation failed (offline) are tried again while they are still on screen."""
